@@ -1,0 +1,1223 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FERCO — Sistema de Auditorías 5S</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f1f5f9;--surface:#fff;--border:#e2e8f0;--text:#0f172a;--muted:#64748b;--soft:#f8fafc;
+  --primary:#101820;--accent:#F0BE1A;--accent-dark:#c99a00;
+  --green:#166534;--greenbg:#dcfce7;
+  --yellow:#92400e;--yellowbg:#fef3c7;
+  --red:#991b1b;--redbg:#fee2e2;
+  --blue:#1e40af;--bluebg:#dbeafe;
+  --purple:#6b21a8;--purplebg:#f3e8ff;
+}
+body{font-family:Arial,sans-serif;font-size:14px;color:var(--text);background:var(--bg);min-height:100vh}
+
+/* AUTH */
+#authScreen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--primary)}
+.auth-box{background:#fff;border-radius:20px;padding:40px 36px;width:100%;max-width:420px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.auth-logo{display:flex;align-items:center;gap:12px;margin-bottom:28px}
+.auth-logo-badge{background:var(--accent);color:var(--primary);font-size:22px;font-weight:900;padding:8px 14px;border-radius:10px;letter-spacing:1px}
+.form-group{margin-bottom:16px}
+.form-group label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+.form-group input,.form-group select,.form-group textarea{width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;outline:none;transition:border-color .2s}
+.form-group input:focus,.form-group select:focus{border-color:var(--primary)}
+.btn-primary{width:100%;padding:12px;background:var(--primary);color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer}
+.auth-err{color:#991b1b;font-size:13px;margin-top:10px;text-align:center;display:none}
+
+/* LAYOUT */
+#app{display:none;min-height:100vh}
+.sidebar{position:fixed;top:0;left:0;width:224px;height:100vh;background:var(--primary);color:#fff;display:flex;flex-direction:column;z-index:100}
+.sidebar-logo{padding:20px 18px 16px;border-bottom:1px solid rgba(255,255,255,.1)}
+.sidebar-logo .badge{background:var(--accent);color:var(--primary);font-size:13px;font-weight:900;padding:5px 10px;border-radius:8px;letter-spacing:1px}
+.sidebar-logo .appname{font-size:13px;font-weight:800;margin-top:8px}
+.role-badge{display:inline-block;margin-top:5px;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;background:rgba(240,190,26,.15);color:var(--accent);border:1px solid rgba(240,190,26,.3)}
+.nav{flex:1;padding:10px 0;overflow-y:auto}
+.nav-item{display:flex;align-items:center;gap:10px;padding:11px 18px;cursor:pointer;font-size:13px;font-weight:600;color:rgba(255,255,255,.7);border-left:3px solid transparent;transition:all .15s;position:relative}
+.nav-item:hover{background:rgba(255,255,255,.07);color:#fff}
+.nav-item.active{background:rgba(240,190,26,.12);color:var(--accent);border-left-color:var(--accent)}
+.nav-badge{background:#ef4444;color:#fff;font-size:10px;font-weight:700;min-width:18px;height:18px;border-radius:9px;display:flex;align-items:center;justify-content:center;padding:0 4px;margin-left:auto}
+.sidebar-footer{padding:14px 18px;border-top:1px solid rgba(255,255,255,.1)}
+.avatar{width:32px;height:32px;border-radius:50%;background:var(--accent);color:var(--primary);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0}
+.user-name{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px}
+.user-email{font-size:10px;color:rgba(255,255,255,.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px}
+.btn-logout{background:none;border:none;color:rgba(255,255,255,.45);cursor:pointer;font-size:12px;margin-top:6px;text-align:left;width:100%}
+.btn-logout:hover{color:#fff}
+.main{margin-left:224px;padding:24px;min-height:100vh}
+
+/* TOPBAR */
+.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;flex-wrap:wrap;gap:12px}
+.topbar h1{font-size:20px;font-weight:800}
+.topbar p{font-size:13px;color:var(--muted);margin-top:2px}
+
+/* CARDS / KPI */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:20px;margin-bottom:16px}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px}
+.kpi .lbl{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.kpi .val{font-size:28px;font-weight:800;line-height:1}
+.kpi .sub{font-size:11px;color:var(--muted);margin-top:4px}
+
+/* STATUS PILLS */
+.pill{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap}
+.pill-pending{background:var(--purplebg);color:var(--purple)}
+.pill-inprog{background:var(--yellowbg);color:var(--yellow)}
+.pill-closed{background:var(--greenbg);color:var(--green)}
+.pill-late{background:var(--redbg);color:var(--red)}
+.pill-green{background:var(--greenbg);color:var(--green)}
+.pill-yellow{background:var(--yellowbg);color:var(--yellow)}
+.pill-red{background:var(--redbg);color:var(--red)}
+
+/* SLA PILLS */
+.sla-24{background:#dbeafe;color:#1e40af;font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap}
+.sla-48{background:#f3e8ff;color:#6b21a8;font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap}
+.sla-vencido{background:var(--redbg);color:var(--red);font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+
+/* KANBAN */
+.kanban-board{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-items:start}
+.kanban-col{background:var(--soft);border:1px solid var(--border);border-radius:16px;overflow:hidden}
+.kanban-col-header{padding:13px 16px;font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}
+.kanban-col[data-col="pending"] .kanban-col-header{background:#f3e8ff;color:var(--purple)}
+.kanban-col[data-col="inprog"] .kanban-col-header{background:var(--yellowbg);color:var(--yellow)}
+.kanban-col[data-col="closed"] .kanban-col-header{background:var(--greenbg);color:var(--green)}
+.kanban-col[data-col="late"] .kanban-col-header{background:var(--redbg);color:var(--red)}
+.col-count{font-size:11px;font-weight:700;min-width:22px;height:22px;border-radius:11px;display:flex;align-items:center;justify-content:center;padding:0 5px;color:#fff}
+.kanban-col[data-col="pending"] .col-count{background:var(--purple)}
+.kanban-col[data-col="inprog"] .col-count{background:var(--yellow)}
+.kanban-col[data-col="closed"] .col-count{background:var(--green)}
+.kanban-col[data-col="late"] .col-count{background:var(--red)}
+.kanban-items{padding:10px;display:flex;flex-direction:column;gap:8px;min-height:80px}
+.kanban-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+.kanban-card:hover{border-color:#101820;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.kanban-card.late-card{border-left:3px solid var(--red)}
+.kc-id{font-size:10px;color:var(--muted);font-weight:700;margin-bottom:3px}
+.kc-area{font-size:13px;font-weight:700;margin-bottom:2px}
+.kc-meta{font-size:11px;color:var(--muted);margin-bottom:8px}
+.kc-footer{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px;margin-top:6px}
+.progress-bar-wrap{background:var(--border);border-radius:4px;height:5px;margin-top:6px}
+.progress-bar{border-radius:4px;height:5px;transition:width .3s}
+.pb-green{background:var(--green)}.pb-yellow{background:#ca8a04}.pb-red{background:var(--red)}
+.kanban-empty{padding:20px;text-align:center;font-size:12px;color:var(--muted)}
+
+/* BUTTONS */
+.btn{padding:9px 16px;border-radius:12px;border:1px solid var(--border);background:var(--surface);font-weight:700;font-size:13px;color:var(--text);cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{border-color:var(--primary);background:var(--soft)}
+.btn-accent{background:var(--accent);color:var(--primary);border-color:var(--accent)}
+.btn-accent:hover{background:var(--accent-dark)}
+.btn-dark{background:var(--primary);color:#fff;border-color:var(--primary)}
+.btn-dark:hover{background:#1e2d3d}
+.btn-sm{padding:6px 12px;font-size:12px;border-radius:8px}
+.btn-danger{background:var(--redbg);color:var(--red);border-color:#fca5a5}
+.btn-success{background:var(--greenbg);color:var(--green);border-color:#86efac}
+
+/* MODAL */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:200;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto}
+.modal-overlay.open{display:flex}
+.modal{background:var(--surface);border-radius:20px;width:100%;max-width:940px;margin:auto;overflow:hidden}
+.modal-header{padding:18px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--surface);z-index:1}
+.modal-header h2{font-size:16px;font-weight:800}
+.modal-body{padding:24px;max-height:78vh;overflow-y:auto}
+.modal-footer{padding:14px 24px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px;position:sticky;bottom:0;background:var(--surface)}
+.btn-close{background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);padding:4px}
+
+/* AUDIT FORM */
+.audit-header-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px}
+.section-header{background:var(--primary);color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;font-weight:800;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between}
+.section-score{font-size:11px;background:rgba(240,190,26,.2);color:var(--accent);padding:2px 8px;border-radius:10px}
+.criteria-table{width:100%;border-collapse:collapse;margin-bottom:18px;font-size:13px}
+.criteria-table th{background:var(--soft);padding:9px 10px;border-bottom:2px solid var(--border);text-align:left;font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.4px}
+.criteria-table td{padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:top}
+.criteria-table tr:hover td{background:#fafafa}
+.yn-group{display:flex;gap:6px}
+.yn-btn{padding:5px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-size:12px;font-weight:700;cursor:pointer;transition:all .15s}
+.yn-btn.yes-active{background:var(--greenbg);border-color:var(--green);color:var(--green)}
+.yn-btn.no-active{background:var(--redbg);border-color:var(--red);color:var(--red)}
+.hallazgo-col textarea{width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:8px;font-size:12px;resize:vertical;min-height:44px;outline:none}
+.hallazgo-col textarea:focus{border-color:var(--primary)}
+.sla-select{padding:4px 8px;border:1px solid var(--border);border-radius:8px;font-size:11px;font-weight:700;outline:none;cursor:pointer}
+.evidencia-label{display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border:1px dashed var(--border);border-radius:8px;font-size:11px;color:var(--muted);cursor:pointer;transition:all .15s;white-space:nowrap}
+.evidencia-label:hover{border-color:var(--primary);color:var(--primary)}
+.evidencia-thumbs{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.evidencia-thumbs img{width:38px;height:38px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer}
+.solucion-col textarea{width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:8px;font-size:12px;resize:vertical;min-height:44px;outline:none;background:#f0fdf4}
+.solucion-col textarea:focus{border-color:var(--green)}
+
+/* DASHBOARD AREA CARDS */
+.area-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:20px}
+.area-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px;position:relative;overflow:hidden}
+.area-card::before{content:'';position:absolute;top:0;left:0;right:0;height:4px}
+.area-card.green::before{background:var(--green)}
+.area-card.yellow::before{background:#ca8a04}
+.area-card.red::before{background:var(--red)}
+.area-card .area-name{font-size:13px;font-weight:800;margin-bottom:4px}
+.area-card .area-pct{font-size:26px;font-weight:800;line-height:1;margin-bottom:6px}
+.area-card.green .area-pct{color:var(--green)}
+.area-card.yellow .area-pct{color:#ca8a04}
+.area-card.red .area-pct{color:var(--red)}
+.area-card .area-sub{font-size:11px;color:var(--muted)}
+.area-card .area-badge{position:absolute;top:12px;right:12px;width:10px;height:10px;border-radius:50%}
+.area-card.green .area-badge{background:var(--green)}
+.area-card.yellow .area-badge{background:#ca8a04}
+.area-card.red .area-badge{background:var(--red)}
+
+/* CHART CARDS */
+.dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.chart-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px}
+.chart-card h3{font-size:13px;font-weight:800;margin-bottom:14px}
+
+/* NOTIFICATIONS */
+.notif-panel{position:fixed;top:0;right:0;width:340px;height:100vh;background:var(--surface);border-left:1px solid var(--border);z-index:300;transform:translateX(100%);transition:transform .25s;display:flex;flex-direction:column}
+.notif-panel.open{transform:translateX(0)}
+.notif-header{padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.notif-list{flex:1;overflow-y:auto;padding:12px}
+.notif-item{padding:12px;border:1px solid var(--border);border-radius:12px;margin-bottom:8px;cursor:pointer;transition:background .15s}
+.notif-item:hover{background:var(--soft)}
+.notif-item.unread{border-left:3px solid var(--accent);background:rgba(240,190,26,.04)}
+.notif-title{font-size:13px;font-weight:700;margin-bottom:2px}
+.notif-body{font-size:12px;color:var(--muted);line-height:1.4}
+.notif-time{font-size:10px;color:var(--muted);margin-top:4px}
+
+/* USERS TABLE */
+.users-table{width:100%;border-collapse:collapse;font-size:13px}
+.users-table th{text-align:left;padding:10px 14px;border-bottom:2px solid var(--border);font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;background:var(--soft)}
+.users-table td{padding:10px 14px;border-bottom:1px solid var(--border);vertical-align:middle}
+.users-table tr:hover td{background:#fafafa}
+
+/* PAGES */
+.page{display:none}.page.active{display:block}
+.filter-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+select,input[type=date],input[type=text],input[type=email]{padding:8px 12px;border:1.5px solid var(--border);border-radius:10px;font-size:13px;background:var(--surface);outline:none}
+select:focus,input:focus{border-color:var(--primary)}
+.divider{border:none;border-top:1px solid var(--border);margin:18px 0}
+
+/* MISC */
+.spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite;margin:40px auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty-state{text-align:center;padding:40px;color:var(--muted);font-size:13px}
+.toast-wrap{position:fixed;bottom:24px;right:24px;z-index:500;display:flex;flex-direction:column;gap:8px}
+.toast{background:var(--primary);color:#fff;padding:12px 18px;border-radius:12px;font-size:13px;font-weight:600;animation:slideUp .3s ease;box-shadow:0 4px 16px rgba(0,0,0,.2)}
+.toast.success{background:#166534}.toast.error{background:#991b1b}
+@keyframes slideUp{from{opacity:0;transform:translateY(10px)}}
+@media(max-width:900px){.kanban-board{grid-template-columns:1fr 1fr}.dash-grid{grid-template-columns:1fr}}
+@media(max-width:640px){.kanban-board{grid-template-columns:1fr}.sidebar{display:none}.main{margin-left:0}.audit-header-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<!-- AUTH -->
+<div id="authScreen">
+  <div class="auth-box">
+    <div class="auth-logo">
+      <div class="auth-logo-badge">5S</div>
+      <div>
+        <div style="font-size:17px;font-weight:800;color:var(--primary)">FERCO Cerámica</div>
+        <div style="font-size:12px;color:var(--muted)">Sistema de Auditorías 5S</div>
+      </div>
+    </div>
+    <h2 style="font-size:19px;font-weight:800;margin-bottom:4px">Iniciar sesión</h2>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:20px">Ingresa con tu correo corporativo</p>
+    <div class="form-group">
+      <label>Correo electrónico</label>
+      <input type="email" id="authEmail" placeholder="usuario@ferco.com.gt">
+    </div>
+    <div class="form-group">
+      <label>Contraseña</label>
+      <input type="password" id="authPass" placeholder="••••••••">
+    </div>
+    <button class="btn-primary" onclick="doLogin()">Ingresar</button>
+    <div class="auth-err" id="authErr"></div>
+    <div style="text-align:center;margin-top:14px;font-size:12px;color:var(--muted)">¿Nuevo usuario? Contacta al administrador.</div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div class="sidebar">
+    <div class="sidebar-logo">
+      <div style="display:flex;align-items:center;gap:8px">
+        <div class="badge">5S</div>
+        <div style="font-size:13px;font-weight:800">FERCO Auditorías</div>
+      </div>
+      <div class="appname" id="sidebarName">—</div>
+      <div class="role-badge" id="sidebarRole">—</div>
+    </div>
+    <nav class="nav" id="mainNav"></nav>
+    <div class="sidebar-footer">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+        <div class="avatar" id="sidebarAvatar">—</div>
+        <div>
+          <div class="user-name" id="sidebarEmail">—</div>
+          <div class="user-email" id="sidebarRoleText">—</div>
+        </div>
+      </div>
+      <button class="btn-logout" onclick="doLogout()">🚪 Cerrar sesión</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="topbar">
+      <div>
+        <h1 id="pageTitle">Dashboard</h1>
+        <p id="pageSubtitle">FERCO Cerámica — Sistema de Auditorías 5S · Operaciones El Salvador</p>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <button class="btn btn-sm" onclick="toggleNotifPanel()" style="position:relative">
+          🔔 Notificaciones
+          <span id="notifBadge" style="display:none;position:absolute;top:-6px;right:-6px;background:#ef4444;color:#fff;font-size:10px;font-weight:700;min-width:18px;height:18px;border-radius:9px;display:none;align-items:center;justify-content:center;padding:0 4px"></span>
+        </button>
+      </div>
+    </div>
+    <div id="pageKanban" class="page active"></div>
+    <div id="pageFormulario" class="page"></div>
+    <div id="pageDashboard" class="page"></div>
+    <div id="pageUsuarios" class="page"></div>
+  </div>
+</div>
+
+<!-- NOTIFICATION PANEL -->
+<div class="notif-panel" id="notifPanel">
+  <div class="notif-header">
+    <h3 style="font-size:15px;font-weight:800">🔔 Notificaciones</h3>
+    <button class="btn-close" onclick="toggleNotifPanel()">✕</button>
+  </div>
+  <div class="notif-list" id="notifList"><div class="empty-state">Sin notificaciones</div></div>
+</div>
+
+<!-- AUDIT MODAL -->
+<div class="modal-overlay" id="auditModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <h2 id="auditModalTitle">Auditoría 5S</h2>
+        <div id="auditModalMeta" style="font-size:11px;color:var(--muted);margin-top:2px"></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span id="auditModalStatus"></span>
+        <button class="btn-close" onclick="closeAuditModal()">✕</button>
+      </div>
+    </div>
+    <div class="modal-body" id="auditModalBody"></div>
+    <div class="modal-footer" id="auditModalFooter"></div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+// ═══════════════════════════════════════
+// FIREBASE CONFIG
+// ═══════════════════════════════════════
+const FB_CONFIG = {
+  apiKey: "AIzaSyCjOD09dsu2byTYthr4XQ0JcXNycN6H8ic",
+  authDomain: "dashboard-5s-e9781.firebaseapp.com",
+  projectId: "dashboard-5s-e9781",
+  storageBucket: "dashboard-5s-e9781.firebasestorage.app",
+  messagingSenderId: "977624686924",
+  appId: "1:977624686924:web:445ae9714c5b1f84abafe9"
+};
+firebase.initializeApp(FB_CONFIG);
+const auth = firebase.auth();
+const db = firebase.firestore();
+const storage = firebase.storage();
+
+// ═══════════════════════════════════════
+// CONSTANTS
+// ═══════════════════════════════════════
+const ROLES_LABEL = {operador:'Operador', supervisor:'Supervisor', admin:'Administrador'};
+const STATUS_LABEL = {pending:'Pendiente', inprog:'En curso', closed:'Cerrada', late:'Atrasada'};
+
+const AREAS = [
+  'Rack 1','Rack 2','Rack 3','Rack 4','Rack 5','Rack 6',
+  'Grifería','Pasillo 2','Pasillo 3','Pasillo 4','Pasillo 5','Pasillo 6','Pasillo 7'
+];
+
+const CRITERIOS_5S = [
+  { s:'1ª S', nombre:'Separar y eliminar innecesarios', items:[
+    'Un solo SKU en cada posición de rack',
+    'Evitar reubicar en ubicaciones rack tarimas dañadas',
+    'Colocar el producto en rack a granel y no uno encima de otro',
+    'Sacar producto dañado de posiciones de rack'
+  ]},
+  { s:'2ª S', nombre:'Situar e identificar necesarios', items:[
+    'Identificación clara de ubicaciones de rack',
+    'Señalización de pasillos y zonas de trabajo',
+    'Etiquetado correcto de productos y áreas',
+    'Demarcación de zonas de tránsito'
+  ]},
+  { s:'3ª S', nombre:'Suprimir la suciedad', items:[
+    'Pisos limpios y sin residuos de cerámica',
+    'Estanterías y racks libres de polvo y suciedad',
+    'Contenedores de basura disponibles y en uso',
+    'Área de trabajo limpia al finalizar turno'
+  ]},
+  { s:'4ª S', nombre:'Señalizar', items:[
+    'Colocar la licencia de ingreso en tarimas completas',
+    'Dejar el producto en las áreas establecidas',
+    'Señalética de seguridad visible y en buen estado',
+    'Indicadores de capacidad de rack visibles'
+  ]},
+  { s:'5ª S', nombre:'Sostener y respetar', items:[
+    'Estibar tarimas completas respetando los tamaños',
+    'No parciales en las ubicaciones de granel',
+    'Uso de equipos de seguridad industrial',
+    'Cumplimiento de procedimientos establecidos'
+  ]}
+];
+
+const SLA_HOURS = {24:24, 48:48};
+
+// Semaforización
+function getAreaColor(pct){ return pct>=80?'green':pct>=50?'yellow':'red'; }
+function getAreaColorLabel(pct){ return pct>=80?'✅ Cumple':pct>=50?'⚠️ Regular':'🔴 Crítico'; }
+
+// ═══════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════
+let currentUser=null, currentUserData=null;
+let audits=[], users=[], notifications=[];
+let unsubListeners=[];
+
+// ═══════════════════════════════════════
+// AUTH
+// ═══════════════════════════════════════
+auth.onAuthStateChanged(async user=>{
+  if(user){
+    currentUser=user;
+    await loadUserData(user.uid);
+    initApp();
+  } else {
+    currentUser=null; currentUserData=null;
+    document.getElementById('authScreen').style.display='flex';
+    document.getElementById('app').style.display='none';
+    unsubAll();
+  }
+});
+
+async function doLogin(){
+  const email=document.getElementById('authEmail').value.trim();
+  const pass=document.getElementById('authPass').value;
+  if(!email||!pass){showAuthErr('Completa todos los campos');return;}
+  try{ await auth.signInWithEmailAndPassword(email,pass); }
+  catch(e){
+    const m={'auth/user-not-found':'Usuario no encontrado','auth/wrong-password':'Contraseña incorrecta',
+      'auth/invalid-email':'Correo inválido','auth/too-many-requests':'Demasiados intentos',
+      'auth/requests-from-referer-are-blocked':'Dominio no autorizado en Firebase. Contacta al admin.'};
+    showAuthErr(m[e.code]||e.message);
+  }
+}
+
+async function doLogout(){ unsubAll(); await auth.signOut(); }
+function showAuthErr(msg){ const e=document.getElementById('authErr'); e.textContent=msg; e.style.display='block'; }
+
+async function loadUserData(uid){
+  const snap=await db.collection('users').doc(uid).get();
+  if(snap.exists){ currentUserData={uid,...snap.data()}; }
+  else {
+    const email=currentUser.email;
+    const name=email.split('@')[0].replace(/\./g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+    currentUserData={uid,email,name,role:'operador',createdAt:new Date()};
+    await db.collection('users').doc(uid).set(currentUserData);
+  }
+}
+
+// ═══════════════════════════════════════
+// APP INIT
+// ═══════════════════════════════════════
+function initApp(){
+  document.getElementById('authScreen').style.display='none';
+  document.getElementById('app').style.display='block';
+  updateSidebar(); buildNav(); subscribeData(); navigateTo('kanban');
+}
+
+function updateSidebar(){
+  const u=currentUserData;
+  const init=(u.name||u.email).split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase();
+  document.getElementById('sidebarAvatar').textContent=init;
+  document.getElementById('sidebarName').textContent=u.name||u.email;
+  document.getElementById('sidebarEmail').textContent=u.email;
+  const rl=ROLES_LABEL[u.role]||u.role;
+  document.getElementById('sidebarRole').textContent=rl;
+  document.getElementById('sidebarRoleText').textContent=rl;
+}
+
+function buildNav(){
+  const role=currentUserData.role;
+  const items=[];
+  if(role==='operador'){
+    items.push({id:'formulario',icon:'📋',label:'Nueva Auditoría'});
+    items.push({id:'kanban',icon:'📌',label:'Mis Auditorías',badge:true});
+  } else if(role==='supervisor'){
+    items.push({id:'kanban',icon:'📌',label:'Mis Asignaciones',badge:true});
+    items.push({id:'dashboard',icon:'📊',label:'Dashboard'});
+  } else {
+    items.push({id:'kanban',icon:'📌',label:'Todas las Auditorías',badge:true});
+    items.push({id:'dashboard',icon:'📊',label:'Dashboard'});
+    items.push({id:'formulario',icon:'📋',label:'Nueva Auditoría'});
+    items.push({id:'usuarios',icon:'👥',label:'Usuarios'});
+  }
+  document.getElementById('mainNav').innerHTML=items.map(i=>`
+    <div class="nav-item" id="nav-${i.id}" onclick="navigateTo('${i.id}')">
+      <span>${i.icon}</span><span>${i.label}</span>
+      ${i.badge?`<span class="nav-badge" id="navBadge" style="display:none">0</span>`:''}
+    </div>`).join('');
+}
+
+function navigateTo(page){
+  document.querySelectorAll('.nav-item').forEach(e=>e.classList.remove('active'));
+  document.getElementById('nav-'+page)?.classList.add('active');
+  document.querySelectorAll('.page').forEach(e=>e.classList.remove('active'));
+  const titles={kanban:'Tablero Kanban',formulario:'Nueva Auditoría',dashboard:'Dashboard 5S',usuarios:'Gestión de Usuarios'};
+  document.getElementById('pageTitle').textContent=titles[page]||page;
+  switch(page){
+    case 'kanban': renderKanban(); document.getElementById('pageKanban').classList.add('active'); break;
+    case 'formulario': renderFormulario(); document.getElementById('pageFormulario').classList.add('active'); break;
+    case 'dashboard': renderDashboard(); document.getElementById('pageDashboard').classList.add('active'); break;
+    case 'usuarios': renderUsuarios(); document.getElementById('pageUsuarios').classList.add('active'); break;
+  }
+}
+
+// ═══════════════════════════════════════
+// SUBSCRIPTIONS
+// ═══════════════════════════════════════
+function subscribeData(){
+  unsubAll();
+  const role=currentUserData.role;
+  let q=db.collection('audits').orderBy('createdAt','desc');
+  if(role==='supervisor') q=q.where('supervisorId','==',currentUser.uid);
+  if(role==='operador') q=q.where('auditorId','==',currentUser.uid);
+
+  const u1=q.onSnapshot(snap=>{
+    audits=snap.docs.map(d=>({id:d.id,...d.data()}));
+    checkSLAStatus();
+    renderKanban(); renderDashboard();
+    updateNavBadge();
+  });
+  unsubListeners.push(u1);
+
+  const u2=db.collection('notifications').where('recipientId','==',currentUser.uid)
+    .orderBy('createdAt','desc').limit(30).onSnapshot(snap=>{
+      notifications=snap.docs.map(d=>({id:d.id,...d.data()}));
+      renderNotifications();
+    });
+  unsubListeners.push(u2);
+
+  if(role!=='operador'){
+    db.collection('users').get().then(snap=>{ users=snap.docs.map(d=>({id:d.id,...d.data()})); });
+  }
+}
+
+function unsubAll(){ unsubListeners.forEach(u=>u&&u()); unsubListeners=[]; }
+
+function updateNavBadge(){
+  const late=audits.filter(a=>a.status==='late').length;
+  const badge=document.getElementById('navBadge');
+  if(!badge) return;
+  badge.textContent=late; badge.style.display=late>0?'flex':'none';
+}
+
+// ═══════════════════════════════════════
+// SLA CHECK — deadline + SLA por hallazgo
+// ═══════════════════════════════════════
+function checkSLAStatus(){
+  const now=new Date();
+  audits.forEach(async a=>{
+    if(a.status==='closed') return;
+    // Audit-level deadline
+    const dl=a.deadline ? (a.deadline.toDate?a.deadline.toDate():new Date(a.deadline)) : null;
+    if(dl && dl<now && a.status!=='late'){
+      await db.collection('audits').doc(a.id).update({status:'late'});
+    }
+  });
+}
+
+function getSLACountdown(createdAt, slaHours){
+  if(!createdAt||!slaHours) return null;
+  const created=createdAt.toDate?createdAt.toDate():new Date(createdAt);
+  const deadline=new Date(created.getTime()+slaHours*3600000);
+  const now=new Date();
+  const diff=deadline-now;
+  if(diff<=0) return {label:'Vencido',cls:'sla-vencido'};
+  const h=Math.floor(diff/3600000);
+  const m=Math.floor((diff%3600000)/60000);
+  return {label:`${h}h ${m}m restantes`,cls:slaHours===24?'sla-24':'sla-48'};
+}
+
+// ═══════════════════════════════════════
+// KANBAN
+// ═══════════════════════════════════════
+function renderKanban(){
+  const el=document.getElementById('pageKanban');
+  if(!el.classList.contains('active')) return;
+  const role=currentUserData.role;
+  const cols=[
+    {key:'pending',label:'Pendiente',icon:'🟣'},
+    {key:'inprog',label:'En curso',icon:'🟡'},
+    {key:'closed',label:'Cerrada',icon:'🟢'},
+    {key:'late',label:'Atrasada',icon:'🔴'},
+  ];
+
+  const filterVal=document.getElementById('kFilter')?.value||'';
+  const searchVal=(document.getElementById('kSearch')?.value||'').toLowerCase();
+  let filtered=audits.filter(a=>{
+    if(filterVal&&a.status!==filterVal) return false;
+    if(searchVal&&!`${a.area||''} ${a.auditorName||''} ${a.supervisorName||''} ${a.id}`.toLowerCase().includes(searchVal)) return false;
+    return true;
+  });
+
+  const late=audits.filter(a=>a.status==='late').length;
+  const kpis=`<div class="kpi-grid">
+    <div class="kpi"><div class="lbl">Total</div><div class="val">${audits.length}</div><div class="sub">Auditorías</div></div>
+    <div class="kpi"><div class="lbl">Pendientes</div><div class="val" style="color:var(--purple)">${audits.filter(a=>a.status==='pending').length}</div><div class="sub">Sin iniciar</div></div>
+    <div class="kpi"><div class="lbl">En curso</div><div class="val" style="color:#ca8a04">${audits.filter(a=>a.status==='inprog').length}</div><div class="sub">En seguimiento</div></div>
+    <div class="kpi"><div class="lbl">Cerradas</div><div class="val" style="color:var(--green)">${audits.filter(a=>a.status==='closed').length}</div><div class="sub">Completadas</div></div>
+    <div class="kpi"><div class="lbl">Atrasadas</div><div class="val" style="color:var(--red)">${late}</div><div class="sub">${late>0?'⚠️ Requieren atención':'Sin atrasos'}</div></div>
+  </div>`;
+
+  const filterRow=`<div class="filter-row">
+    <select id="kFilter" onchange="renderKanban()">
+      <option value="">Todas las etapas</option>
+      ${cols.map(c=>`<option value="${c.key}">${c.label}</option>`).join('')}
+    </select>
+    <select id="kAreaFilter" onchange="renderKanban()">
+      <option value="">Todas las áreas</option>
+      ${AREAS.map(a=>`<option value="${a}">${a}</option>`).join('')}
+    </select>
+    <input type="text" id="kSearch" placeholder="Buscar..." oninput="renderKanban()" style="min-width:180px">
+  </div>`;
+
+  const areaFilter=document.getElementById('kAreaFilter')?.value||'';
+  if(areaFilter) filtered=filtered.filter(a=>a.area===areaFilter);
+
+  const board=cols.map(col=>{
+    const colAudits=filtered.filter(a=>a.status===col.key);
+    const cards=colAudits.length ? colAudits.map(a=>{
+      const pct=calcProgress(a);
+      const pbcls=pct>=80?'pb-green':pct>=50?'pb-yellow':'pb-red';
+      const dl=a.deadline?(a.deadline.toDate?a.deadline.toDate():new Date(a.deadline)):null;
+      const dlStr=dl?dl.toLocaleDateString('es-GT'):'—';
+      // SLA urgency — find any vencido hallazgo
+      const hasVencido=a.hallazgoSLA&&Object.values(a.hallazgoSLA).some(s=>{
+        if(!s||!a.createdAt) return false;
+        const created=a.createdAt.toDate?a.createdAt.toDate():new Date(a.createdAt);
+        return new Date(created.getTime()+Number(s)*3600000)<new Date();
+      });
+      return `<div class="kanban-card${a.status==='late'?' late-card':''}" onclick="openAuditModal('${a.id}')">
+        <div class="kc-id">#${a.id.substring(0,8).toUpperCase()}</div>
+        <div class="kc-area">📍 ${a.area||'—'}</div>
+        <div class="kc-meta">👤 ${a.auditorName||'—'}${role!=='operador'?' · 👔 '+( a.supervisorName||'—'):''}</div>
+        ${hasVencido&&a.status!=='closed'?'<span class="sla-vencido">⚡ SLA vencido</span>':''}
+        <div class="progress-bar-wrap"><div class="progress-bar ${pbcls}" style="width:${pct}%"></div></div>
+        <div class="kc-footer">
+          <span style="font-size:10px;color:var(--muted)">Avance ${pct}%</span>
+          <span style="font-size:10px;color:var(--muted)">📅 ${dlStr}</span>
+        </div>
+      </div>`;
+    }).join('') : '<div class="kanban-empty">Sin auditorías</div>';
+    return `<div class="kanban-col" data-col="${col.key}">
+      <div class="kanban-col-header">
+        <span>${col.icon} ${col.label}</span>
+        <span class="col-count">${colAudits.length}</span>
+      </div>
+      <div class="kanban-items">${cards}</div>
+    </div>`;
+  }).join('');
+
+  el.innerHTML=kpis+filterRow+`<div class="kanban-board">${board}</div>`;
+}
+
+function calcProgress(audit){
+  if(!audit.criterios) return 0;
+  let total=0,done=0;
+  CRITERIOS_5S.forEach((s,si)=>s.items.forEach((_,ii)=>{ total++; if(['si','no'].includes(audit.criterios?.[`s${si}_i${ii}`])) done++; }));
+  return total?Math.round(done/total*100):0;
+}
+
+// ═══════════════════════════════════════
+// FORMULARIO (OPERADOR)
+// ═══════════════════════════════════════
+const ynState={}, evidenceFiles={};
+
+function renderFormulario(){
+  const el=document.getElementById('pageFormulario');
+  el.innerHTML=`<div class="card">
+    <h3 style="font-size:15px;font-weight:800;margin-bottom:4px">Nueva Auditoría 5S</h3>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:18px">Completa todos los criterios y asigna un supervisor</p>
+    <div class="audit-header-grid">
+      <div class="form-group"><label>Área a auditar</label>
+        <select id="fArea">${AREAS.map(a=>`<option value="${a}">${a}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Fecha límite de solución</label>
+        <input type="date" id="fDeadline" min="${new Date().toISOString().split('T')[0]}"></div>
+      <div class="form-group"><label>Supervisor asignado</label>
+        <select id="fSupervisor"><option value="">Cargando...</option></select></div>
+      <div class="form-group"><label>Observaciones generales</label>
+        <input type="text" id="fObs" placeholder="Observaciones generales..."></div>
+    </div>
+    <hr class="divider">
+    ${buildCriteriosForm()}
+    <div style="text-align:right;margin-top:22px">
+      <button class="btn btn-accent" onclick="submitFormulario()">📤 Enviar Auditoría</button>
+    </div>
+  </div>`;
+  loadSupervisors();
+}
+
+function buildCriteriosForm(){
+  return CRITERIOS_5S.map((sec,si)=>`
+    <div class="section-header"><span>${sec.s} — ${sec.nombre}</span></div>
+    <div style="overflow-x:auto;margin-bottom:18px">
+    <table class="criteria-table">
+      <thead><tr>
+        <th style="width:32px">#</th>
+        <th>Criterio</th>
+        <th style="min-width:110px">¿Cumple?</th>
+        <th style="min-width:80px">SLA</th>
+        <th style="min-width:160px">Detalle del hallazgo</th>
+        <th style="min-width:110px">Evidencia</th>
+      </tr></thead>
+      <tbody>
+        ${sec.items.map((item,ii)=>`<tr>
+          <td style="color:var(--muted);font-weight:700">${ii+1}</td>
+          <td style="font-weight:600;line-height:1.4">${item}</td>
+          <td><div class="yn-group">
+            <button class="yn-btn" id="yn-yes-${si}-${ii}" onclick="setYN(${si},${ii},'si')">✓ Sí</button>
+            <button class="yn-btn" id="yn-no-${si}-${ii}" onclick="setYN(${si},${ii},'no')">✗ No</button>
+          </div></td>
+          <td>
+            <select class="sla-select" id="sla-${si}-${ii}">
+              <option value="">—</option>
+              <option value="24">⚡ 24h</option>
+              <option value="48">🕐 48h</option>
+            </select>
+          </td>
+          <td class="hallazgo-col"><textarea id="hallazgo-${si}-${ii}" placeholder="Describe el hallazgo..."></textarea></td>
+          <td>
+            <div>
+              <label class="evidencia-label" for="ev-${si}-${ii}">📷 Foto</label>
+              <input type="file" id="ev-${si}-${ii}" style="display:none" accept="image/*" multiple onchange="previewEvidence(${si},${ii},this)">
+              <div class="evidencia-thumbs" id="thumbs-${si}-${ii}"></div>
+            </div>
+          </td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>
+  `).join('');
+}
+
+function setYN(si,ii,val){
+  const key=`s${si}_i${ii}`;
+  ynState[key]=val;
+  document.getElementById(`yn-yes-${si}-${ii}`).className='yn-btn'+(val==='si'?' yes-active':'');
+  document.getElementById(`yn-no-${si}-${ii}`).className='yn-btn'+(val==='no'?' no-active':'');
+}
+
+function previewEvidence(si,ii,input){
+  const key=`s${si}_i${ii}`;
+  if(!evidenceFiles[key]) evidenceFiles[key]=[];
+  Array.from(input.files).forEach(f=>evidenceFiles[key].push(f));
+  const thumbs=document.getElementById(`thumbs-${si}-${ii}`);
+  thumbs.innerHTML='';
+  evidenceFiles[key].forEach(f=>{
+    const img=document.createElement('img');
+    img.src=URL.createObjectURL(f); thumbs.appendChild(img);
+  });
+}
+
+async function loadSupervisors(){
+  const snap=await db.collection('users').where('role','==','supervisor').get();
+  users=snap.docs.map(d=>({id:d.id,...d.data()}));
+  const sel=document.getElementById('fSupervisor');
+  if(!sel) return;
+  sel.innerHTML=users.length
+    ? users.map(u=>`<option value="${u.id}">${u.name||u.email}</option>`).join('')
+    : '<option value="">Sin supervisores disponibles</option>';
+}
+
+async function submitFormulario(){
+  const area=document.getElementById('fArea')?.value;
+  const deadline=document.getElementById('fDeadline')?.value;
+  const supervisorId=document.getElementById('fSupervisor')?.value;
+  const obs=document.getElementById('fObs')?.value||'';
+  if(!deadline){showToast('Selecciona una fecha límite','error');return;}
+  if(!supervisorId){showToast('Selecciona un supervisor','error');return;}
+  const sup=users.find(u=>u.id===supervisorId);
+  const criterios={}, hallazgos={}, hallazgoSLA={};
+  CRITERIOS_5S.forEach((sec,si)=>sec.items.forEach((_,ii)=>{
+    const key=`s${si}_i${ii}`;
+    criterios[key]=ynState[key]||null;
+    hallazgos[key]=document.getElementById(`hallazgo-${si}-${ii}`)?.value||'';
+    const slaVal=document.getElementById(`sla-${si}-${ii}`)?.value||'';
+    if(slaVal) hallazgoSLA[key]=Number(slaVal);
+  }));
+  showToast('Guardando auditoría...','');
+  try{
+    const docRef=await db.collection('audits').add({
+      area, obs, criterios, hallazgos, hallazgoSLA,
+      status:'pending',
+      auditorId:currentUser.uid,
+      auditorName:currentUserData.name||currentUserData.email,
+      supervisorId,
+      supervisorName:sup?.name||sup?.email||'—',
+      deadline:new Date(deadline+'T23:59:59'),
+      createdAt:firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    // Upload evidence
+    for(const [key,files] of Object.entries(evidenceFiles)){
+      for(const file of files){
+        const path=`audits/${docRef.id}/auditor/${key}_${Date.now()}_${file.name}`;
+        const snap2=await storage.ref(path).put(file);
+        const url=await snap2.ref.getDownloadURL();
+        await db.collection('audits').doc(docRef.id).update({[`evidencias_auditor.${key}`]:firebase.firestore.FieldValue.arrayUnion(url)});
+      }
+    }
+    await createNotif(supervisorId,{
+      title:'Nueva auditoría asignada',
+      body:`${currentUserData.name||currentUserData.email} te asignó una auditoría 5S — ${area}`,
+      auditId:docRef.id, type:'assignment'
+    });
+    showToast('✅ Auditoría enviada correctamente','success');
+    Object.keys(ynState).forEach(k=>delete ynState[k]);
+    Object.keys(evidenceFiles).forEach(k=>delete evidenceFiles[k]);
+    renderFormulario();
+  }catch(e){showToast('Error: '+e.message,'error');}
+}
+
+// ═══════════════════════════════════════
+// AUDIT MODAL
+// ═══════════════════════════════════════
+let currentAudit=null;
+const supEvidenceFiles={};
+
+async function openAuditModal(auditId){
+  const audit=audits.find(a=>a.id===auditId);
+  if(!audit){showToast('No encontrada','error');return;}
+  currentAudit=audit;
+  const role=currentUserData.role;
+  const dl=audit.deadline?(audit.deadline.toDate?audit.deadline.toDate():new Date(audit.deadline)):null;
+  const dlStr=dl?dl.toLocaleDateString('es-GT'):'—';
+  document.getElementById('auditModalTitle').textContent=`Auditoría 5S — ${audit.area||'—'}`;
+  document.getElementById('auditModalMeta').textContent=`👤 ${audit.auditorName||'—'} · 👔 ${audit.supervisorName||'—'} · 📅 Límite: ${dlStr}`;
+  document.getElementById('auditModalStatus').innerHTML=`<span class="pill pill-${audit.status||'pending'}">${STATUS_LABEL[audit.status]||'—'}</span>`;
+
+  const canSolve=(role==='supervisor'&&audit.supervisorId===currentUser.uid)||role==='admin';
+
+  let body=`<div style="margin-bottom:16px;font-size:13px"><strong>Observaciones:</strong> ${audit.obs||'—'}</div>`;
+  body+=CRITERIOS_5S.map((sec,si)=>{
+    const yes=sec.items.filter((_,ii)=>audit.criterios?.[`s${si}_i${ii}`]==='si').length;
+    const pct=Math.round(yes/sec.items.length*100);
+    const rows=sec.items.map((item,ii)=>{
+      const key=`s${si}_i${ii}`;
+      const val=audit.criterios?.[key];
+      const hallazgo=audit.hallazgos?.[key]||'—';
+      const solucion=audit.soluciones?.[key]||'';
+      const slaH=audit.hallazgoSLA?.[key];
+      const evA=audit.evidencias_auditor?.[key]||[];
+      const evS=audit.evidencias_supervisor?.[key]||[];
+      const ynDisp=val==='si'?'<span class="pill pill-green">✓ Sí</span>':val==='no'?'<span class="pill pill-red">✗ No</span>':'<span class="pill">—</span>';
+      let slaDisp='—';
+      if(slaH && audit.createdAt){
+        const cd=getSLACountdown(audit.createdAt,slaH);
+        if(cd) slaDisp=`<span class="${cd.cls}">${slaH}h · ${cd.label}</span>`;
+      }
+      const evAhtml=evA.map(u=>`<img src="${u}" style="width:36px;height:36px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer;margin:2px" onclick="window.open('${u}','_blank')">`).join('');
+      const evShtml=evS.map(u=>`<img src="${u}" style="width:36px;height:36px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer;margin:2px" onclick="window.open('${u}','_blank')">`).join('');
+      const solCol=canSolve
+        ? `<td class="solucion-col"><textarea id="sol-${si}-${ii}" placeholder="Detalle de la solución...">${solucion}</textarea></td>
+           <td><label class="evidencia-label" for="sev-${si}-${ii}">📷 Evidencia</label>
+           <input type="file" id="sev-${si}-${ii}" style="display:none" accept="image/*" multiple onchange="previewSupEv(${si},${ii},this)">
+           <div class="evidencia-thumbs" id="sthumbs-${si}-${ii}">${evShtml}</div></td>`
+        : `<td style="font-size:12px">${solucion||'—'}</td><td><div class="evidencia-thumbs">${evShtml||'—'}</div></td>`;
+      return `<tr>
+        <td style="color:var(--muted);font-weight:700">${ii+1}</td>
+        <td style="font-weight:600;line-height:1.4">${item}</td>
+        <td>${ynDisp}</td>
+        <td>${slaDisp}</td>
+        <td style="font-size:12px">${hallazgo}</td>
+        <td><div class="evidencia-thumbs">${evAhtml||'—'}</div></td>
+        ${solCol}
+      </tr>`;
+    }).join('');
+    return `<div class="section-header"><span>${sec.s} — ${sec.nombre}</span><span class="section-score">${yes}/${sec.items.length} · ${pct}%</span></div>
+      <div style="overflow-x:auto;margin-bottom:18px"><table class="criteria-table">
+        <thead><tr><th>#</th><th>Criterio</th><th>¿Cumple?</th><th>SLA</th><th>Detalle hallazgo</th><th>Evidencia</th>
+        <th>${canSolve?'Detalle de la solución':'Solución'}</th><th>${canSolve?'Evidencia solución':'Evidencia sup.'}</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>`;
+  }).join('');
+
+  document.getElementById('auditModalBody').innerHTML=body;
+
+  let footer='';
+  if(canSolve && audit.status!=='closed'){
+    footer+=`<button class="btn btn-sm" onclick="saveProgress()">💾 Guardar progreso</button>
+      <button class="btn btn-success btn-sm" onclick="closeAuditAction()">✅ Marcar cerrada</button>`;
+  }
+  if(role==='admin'){
+    footer+=`<button class="btn btn-danger btn-sm" onclick="deleteAudit('${audit.id}')">🗑 Eliminar</button>`;
+  }
+  footer+=`<button class="btn btn-sm" onclick="closeAuditModal()">Cerrar</button>`;
+  document.getElementById('auditModalFooter').innerHTML=footer;
+  document.getElementById('auditModal').classList.add('open');
+}
+
+function previewSupEv(si,ii,input){
+  const key=`s${si}_i${ii}`;
+  if(!supEvidenceFiles[key]) supEvidenceFiles[key]=[];
+  Array.from(input.files).forEach(f=>supEvidenceFiles[key].push(f));
+  const thumbs=document.getElementById(`sthumbs-${si}-${ii}`);
+  if(!thumbs) return;
+  const existing=currentAudit.evidencias_supervisor?.[key]||[];
+  thumbs.innerHTML=existing.map(u=>`<img src="${u}" style="width:36px;height:36px;object-fit:cover;border-radius:6px;border:1px solid var(--border);margin:2px">`).join('');
+  supEvidenceFiles[key].forEach(f=>{
+    const img=document.createElement('img');
+    img.src=URL.createObjectURL(f); img.style.cssText='width:36px;height:36px;object-fit:cover;border-radius:6px;border:1px solid var(--border);margin:2px';
+    thumbs.appendChild(img);
+  });
+}
+
+async function saveProgress(){
+  if(!currentAudit) return;
+  const soluciones={};
+  CRITERIOS_5S.forEach((sec,si)=>sec.items.forEach((_,ii)=>{
+    const key=`s${si}_i${ii}`;
+    const el=document.getElementById(`sol-${si}-${ii}`);
+    if(el) soluciones[key]=el.value||'';
+  }));
+  showToast('Guardando...','');
+  try{
+    for(const [key,files] of Object.entries(supEvidenceFiles)){
+      for(const file of files){
+        const path=`audits/${currentAudit.id}/supervisor/${key}_${Date.now()}_${file.name}`;
+        const snap2=await storage.ref(path).put(file);
+        const url=await snap2.ref.getDownloadURL();
+        await db.collection('audits').doc(currentAudit.id).update({[`evidencias_supervisor.${key}`]:firebase.firestore.FieldValue.arrayUnion(url)});
+      }
+    }
+    await db.collection('audits').doc(currentAudit.id).update({
+      soluciones, status:'inprog',
+      updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+    await createNotif(currentAudit.auditorId,{
+      title:'Avance registrado',
+      body:`${currentUserData.name||currentUserData.email} actualizó la solución de auditoría #${currentAudit.id.substring(0,8).toUpperCase()}`,
+      auditId:currentAudit.id, type:'update'
+    });
+    Object.keys(supEvidenceFiles).forEach(k=>delete supEvidenceFiles[k]);
+    showToast('✅ Progreso guardado','success');
+    closeAuditModal();
+  }catch(e){showToast('Error: '+e.message,'error');}
+}
+
+async function closeAuditAction(){
+  await saveProgress();
+  await db.collection('audits').doc(currentAudit.id).update({status:'closed',closedAt:firebase.firestore.FieldValue.serverTimestamp()});
+  await createNotif(currentAudit.auditorId,{
+    title:'Auditoría cerrada ✅',
+    body:`Tu auditoría #${currentAudit.id.substring(0,8).toUpperCase()} fue cerrada`,
+    auditId:currentAudit.id, type:'closed'
+  });
+  showToast('✅ Auditoría cerrada','success');
+  closeAuditModal();
+}
+
+async function deleteAudit(id){
+  if(!confirm('¿Eliminar esta auditoría?')) return;
+  await db.collection('audits').doc(id).delete();
+  showToast('Eliminada','');
+  closeAuditModal();
+}
+
+function closeAuditModal(){
+  document.getElementById('auditModal').classList.remove('open');
+  currentAudit=null;
+  Object.keys(supEvidenceFiles).forEach(k=>delete supEvidenceFiles[k]);
+}
+
+// ═══════════════════════════════════════
+// DASHBOARD
+// ═══════════════════════════════════════
+let dashCharts={};
+function renderDashboard(){
+  const el=document.getElementById('pageDashboard');
+  if(!el.classList.contains('active')) return;
+
+  // Per-area stats
+  const areaStats=AREAS.map(area=>{
+    const aAudits=audits.filter(a=>a.area===area);
+    if(!aAudits.length) return {area,pct:0,count:0,yes:0,total:0};
+    let yes=0,total=0;
+    aAudits.forEach(a=>{
+      CRITERIOS_5S.forEach((sec,si)=>sec.items.forEach((_,ii)=>{
+        const v=a.criterios?.[`s${si}_i${ii}`];
+        if(v==='si'){yes++;total++;} else if(v==='no'){total++;}
+      }));
+    });
+    const pct=total?Math.round(yes/total*100):0;
+    return {area,pct,count:aAudits.length,yes,total};
+  }).filter(a=>a.count>0);
+
+  // Per-S stats
+  const sStats=CRITERIOS_5S.map((sec,si)=>{
+    let yes=0,no=0,total=0;
+    audits.forEach(a=>sec.items.forEach((_,ii)=>{
+      const v=a.criterios?.[`s${si}_i${ii}`];
+      if(v==='si'){yes++;total++;} else if(v==='no'){no++;total++;}
+    }));
+    const pct=total?Math.round(yes/total*100):0;
+    return {s:sec.s,nombre:sec.nombre,yes,no,total,pct};
+  });
+
+  const overallPct=sStats.length?Math.round(sStats.reduce((a,b)=>a+b.pct,0)/sStats.length):0;
+  const META=93;
+  const metaColor=overallPct>=META?'var(--green)':overallPct>=80?'#ca8a04':'var(--red)';
+  const closed=audits.filter(a=>a.status==='closed').length;
+
+  // SLA vencidos
+  const vencidos=audits.filter(a=>{
+    if(a.status==='closed'||!a.hallazgoSLA||!a.createdAt) return false;
+    const created=a.createdAt.toDate?a.createdAt.toDate():new Date(a.createdAt);
+    return Object.values(a.hallazgoSLA).some(h=>new Date(created.getTime()+Number(h)*3600000)<new Date());
+  }).length;
+
+  el.innerHTML=`
+    <div class="kpi-grid">
+      <div class="kpi">
+        <div class="lbl">Cumplimiento global</div>
+        <div class="val" style="color:${metaColor}">${overallPct}%</div>
+        <div class="sub">Meta: ${META}% · ${overallPct>=META?'✅ Alcanzada':'⚠️ Por alcanzar'}</div>
+      </div>
+      <div class="kpi">
+        <div class="lbl">Tasa de cierre</div>
+        <div class="val" style="color:var(--green)">${audits.length?Math.round(closed/audits.length*100):0}%</div>
+        <div class="sub">${closed} de ${audits.length} cerradas</div>
+      </div>
+      <div class="kpi">
+        <div class="lbl">SLA vencidos</div>
+        <div class="val" style="color:${vencidos>0?'var(--red)':'var(--green)'}">${vencidos}</div>
+        <div class="sub">${vencidos>0?'⚡ Requieren atención':'✅ Al día'}</div>
+      </div>
+      <div class="kpi">
+        <div class="lbl">Áreas evaluadas</div>
+        <div class="val">${areaStats.length}</div>
+        <div class="sub">de ${AREAS.length} áreas totales</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="font-size:14px;font-weight:800;margin-bottom:14px">Cumplimiento por área — Semaforización</h3>
+      <div class="area-grid">
+        ${areaStats.length ? areaStats.map(a=>{
+          const cls=getAreaColor(a.pct);
+          return `<div class="area-card ${cls}">
+            <div class="area-badge"></div>
+            <div class="area-name">${a.area}</div>
+            <div class="area-pct">${a.pct}%</div>
+            <div class="area-sub">${getAreaColorLabel(a.pct)} · ${a.count} auditoría${a.count>1?'s':''}</div>
+            <div class="progress-bar-wrap" style="margin-top:8px">
+              <div class="progress-bar ${cls==='green'?'pb-green':cls==='yellow'?'pb-yellow':'pb-red'}" style="width:${a.pct}%"></div>
+            </div>
+          </div>`;
+        }).join('') : '<div class="empty-state">Sin datos de áreas aún</div>'}
+      </div>
+      <div style="display:flex;gap:16px;margin-top:12px;font-size:12px">
+        <span>🟢 Verde = ≥80% &nbsp;</span>
+        <span>🟡 Amarillo = 50–79%</span>
+        <span>🔴 Rojo = &lt;50%</span>
+      </div>
+    </div>
+
+    <div class="dash-grid">
+      <div class="chart-card">
+        <h3>Cumplimiento por S</h3>
+        <div style="position:relative;height:240px"><canvas id="chartS"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Estado de auditorías</h3>
+        <div style="position:relative;height:240px"><canvas id="chartStatus"></canvas></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="font-size:14px;font-weight:800;margin-bottom:14px">Detalle por categoría 5S</h3>
+      ${sStats.map(s=>`
+        <div style="margin-bottom:14px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <span style="font-size:13px;font-weight:700">${s.s} — ${s.nombre}</span>
+            <span style="font-size:13px;font-weight:800;color:${s.pct>=80?'var(--green)':s.pct>=50?'#ca8a04':'var(--red)'}">${s.pct}%</span>
+          </div>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar ${s.pct>=80?'pb-green':s.pct>=50?'pb-yellow':'pb-red'}" style="width:${s.pct}%"></div>
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:3px">✓ ${s.yes} cumple · ✗ ${s.no} no cumple · ${s.total} evaluados</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  Object.values(dashCharts).forEach(c=>c&&c.destroy()); dashCharts={};
+
+  const ctxS=document.getElementById('chartS');
+  if(ctxS) dashCharts.s=new Chart(ctxS,{
+    type:'bar',
+    data:{
+      labels:sStats.map(s=>s.s),
+      datasets:[
+        {label:'Cumple',data:sStats.map(s=>s.yes),backgroundColor:'#166534'},
+        {label:'No cumple',data:sStats.map(s=>s.no),backgroundColor:'#991b1b'},
+      ]
+    },
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true}}}
+  });
+
+  const byStatus={pending:0,inprog:0,closed:0,late:0};
+  audits.forEach(a=>{if(byStatus[a.status]!==undefined) byStatus[a.status]++;});
+  const ctxSt=document.getElementById('chartStatus');
+  if(ctxSt) dashCharts.status=new Chart(ctxSt,{
+    type:'doughnut',
+    data:{
+      labels:['Pendiente','En curso','Cerrada','Atrasada'],
+      datasets:[{data:[byStatus.pending,byStatus.inprog,byStatus.closed,byStatus.late],
+        backgroundColor:['#7c3aed','#ca8a04','#166534','#991b1b'],hoverOffset:4}]
+    },
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:12}}}}}
+  });
+}
+
+// ═══════════════════════════════════════
+// USUARIOS
+// ═══════════════════════════════════════
+async function renderUsuarios(){
+  const el=document.getElementById('pageUsuarios');
+  if(currentUserData.role!=='admin'){el.innerHTML='<div class="card"><p>Sin acceso</p></div>';return;}
+  el.innerHTML='<div class="card"><div class="spinner"></div></div>';
+  const snap=await db.collection('users').get();
+  const all=snap.docs.map(d=>({id:d.id,...d.data()}));
+  el.innerHTML=`
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h3 style="font-size:15px;font-weight:800">Usuarios registrados (${all.length})</h3>
+        <button class="btn btn-accent" onclick="toggleCreateUser()">+ Nuevo usuario</button>
+      </div>
+      <table class="users-table">
+        <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Cambiar rol</th></tr></thead>
+        <tbody>${all.map(u=>`<tr>
+          <td><div style="display:flex;align-items:center;gap:8px">
+            <div class="avatar" style="width:28px;height:28px;font-size:11px">${(u.name||u.email).substring(0,2).toUpperCase()}</div>
+            ${u.name||'—'}
+          </div></td>
+          <td style="color:var(--muted);font-size:12px">${u.email}</td>
+          <td><span class="pill ${u.role==='admin'?'pill-late':u.role==='supervisor'?'pill-inprog':'pill-pending'}">${ROLES_LABEL[u.role]||u.role}</span></td>
+          <td><select onchange="changeRole('${u.id}',this.value)" style="font-size:12px;padding:4px 8px;border-radius:6px">
+            ${Object.entries(ROLES_LABEL).map(([k,v])=>`<option value="${k}" ${u.role===k?'selected':''}>${v}</option>`).join('')}
+          </select></td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>
+    <div class="card" id="createUserCard" style="display:none">
+      <h3 style="font-size:14px;font-weight:800;margin-bottom:16px">Crear nuevo usuario</h3>
+      <div class="audit-header-grid">
+        <div class="form-group"><label>Nombre completo</label><input type="text" id="nuName" placeholder="Nombre Apellido"></div>
+        <div class="form-group"><label>Correo corporativo</label><input type="email" id="nuEmail" placeholder="usuario@ferco.com.gt"></div>
+        <div class="form-group"><label>Contraseña temporal</label><input type="password" id="nuPass" placeholder="Mínimo 6 caracteres"></div>
+        <div class="form-group"><label>Rol</label><select id="nuRole">
+          <option value="operador">Operador</option>
+          <option value="supervisor">Supervisor</option>
+          <option value="admin">Administrador</option>
+        </select></div>
+      </div>
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-dark" onclick="createUser()">Crear usuario</button>
+        <button class="btn btn-sm" onclick="toggleCreateUser()">Cancelar</button>
+      </div>
+    </div>`;
+}
+
+function toggleCreateUser(){
+  const c=document.getElementById('createUserCard');
+  if(c) c.style.display=c.style.display==='none'?'block':'none';
+}
+
+async function changeRole(uid,role){
+  await db.collection('users').doc(uid).update({role});
+  showToast('Rol actualizado','success');
+  renderUsuarios();
+}
+
+async function createUser(){
+  const name=document.getElementById('nuName')?.value.trim();
+  const email=document.getElementById('nuEmail')?.value.trim();
+  const pass=document.getElementById('nuPass')?.value;
+  const role=document.getElementById('nuRole')?.value;
+  if(!name||!email||!pass){showToast('Completa todos los campos','error');return;}
+  try{
+    const res=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FB_CONFIG.apiKey}`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email,password:pass,returnSecureToken:false})
+    });
+    const data=await res.json();
+    if(data.error){showToast('Error: '+data.error.message,'error');return;}
+    await db.collection('users').doc(data.localId).set({name,email,role,createdAt:new Date(),createdBy:currentUser.uid});
+    showToast('✅ Usuario creado: '+email,'success');
+    renderUsuarios();
+  }catch(e){showToast('Error: '+e.message,'error');}
+}
+
+// ═══════════════════════════════════════
+// NOTIFICATIONS
+// ═══════════════════════════════════════
+async function createNotif(recipientId,data){
+  await db.collection('notifications').add({recipientId,...data,read:false,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+}
+
+function renderNotifications(){
+  const unread=notifications.filter(n=>!n.read).length;
+  const badge=document.getElementById('notifBadge');
+  if(badge){badge.textContent=unread;badge.style.display=unread>0?'flex':'none';}
+  const navBadge=document.getElementById('navBadge');
+  // keep kanban late badge separate
+  const list=document.getElementById('notifList');
+  if(!list) return;
+  list.innerHTML=!notifications.length?'<div class="empty-state">Sin notificaciones</div>'
+    :notifications.map(n=>{
+      const t=n.createdAt?.toDate?n.createdAt.toDate():new Date();
+      return `<div class="notif-item${n.read?'':' unread'}" onclick="markRead('${n.id}')">
+        <div class="notif-title">${n.title||'Notificación'}</div>
+        <div class="notif-body">${n.body||''}</div>
+        <div class="notif-time">${t.toLocaleDateString('es-GT')} ${t.toLocaleTimeString('es-GT',{hour:'2-digit',minute:'2-digit'})}</div>
+      </div>`;
+    }).join('');
+}
+
+async function markRead(id){ await db.collection('notifications').doc(id).update({read:true}); }
+
+function toggleNotifPanel(){
+  document.getElementById('notifPanel').classList.toggle('open');
+  notifications.filter(n=>!n.read).forEach(n=>db.collection('notifications').doc(n.id).update({read:true}));
+}
+
+// ═══════════════════════════════════════
+// UTILS
+// ═══════════════════════════════════════
+function showToast(msg,type=''){
+  const wrap=document.getElementById('toastWrap');
+  const t=document.createElement('div');
+  t.className='toast'+(type?' '+type:'');
+  t.textContent=msg; wrap.appendChild(t);
+  setTimeout(()=>t.remove(),3200);
+}
+
+document.getElementById('authPass')?.addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+document.getElementById('auditModal')?.addEventListener('click',e=>{if(e.target===document.getElementById('auditModal'))closeAuditModal();});
+</script>
+</body>
+</html>
