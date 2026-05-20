@@ -107,7 +107,7 @@ body{font-family:Arial,sans-serif;font-size:14px;color:var(--text);background:va
 .kc-footer{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px;margin-top:6px}
 .progress-bar-wrap{background:var(--border);border-radius:4px;height:5px;margin-top:6px}
 .progress-bar{border-radius:4px;height:5px;transition:width .3s}
-.pb-green{background:var(--green)}.pb-yellow{background:#ca8a04}.pb-red{background:var(--red)}
+.pb-green{background:var(--green)}.pb-yellow{background:#ca8a04}.pb-red{background:var(--red)}.pb-gray{background:var(--border)}
 .kanban-empty{padding:20px;text-align:center;font-size:12px;color:var(--muted)}
 
 /* BUTTONS */
@@ -267,6 +267,39 @@ select:focus,input:focus{border-color:var(--primary)}
 .cal-green{background:#16a34a;color:#fff}.cal-amber{background:#d97706;color:#fff}.cal-red{background:#dc2626;color:#fff}
 .trend-filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
 .trend-filters select{padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-weight:600;outline:none;background:var(--surface);color:var(--primary)}
+
+/* ─── UI POLISH: animaciones y transiciones ─── */
+*{box-sizing:border-box}
+.kanban-card{transition:transform .18s cubic-bezier(.34,1.56,.64,1),box-shadow .18s ease,border-color .18s ease}
+.kanban-card:hover{transform:translateY(-3px) scale(1.01);box-shadow:0 8px 24px rgba(0,0,0,.13);border-color:var(--accent)}
+.btn{transition:transform .15s ease,box-shadow .15s ease,background .15s ease,opacity .15s ease}
+.btn:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.12)}
+.btn:active{transform:translateY(0);box-shadow:none}
+.btn-accent:hover{opacity:.9}
+.card{transition:box-shadow .2s ease}
+.dash-card{transition:transform .2s ease,box-shadow .2s ease}
+.dash-card:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,.1)}
+.nav-item{transition:all .18s ease}
+.nav-item:hover{background:rgba(255,255,255,.08);transform:translateX(3px)}
+.nav-item.active{transform:none}
+.notif-item{transition:background .18s ease,transform .15s ease}
+.notif-item:hover{transform:translateX(2px);background:var(--soft)}
+.nota-item{transition:box-shadow .2s ease}
+.nota-item:hover{box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.yn-btn{transition:all .15s cubic-bezier(.34,1.56,.64,1)}
+.yn-btn:hover{transform:scale(1.07)}
+.yn-btn:active{transform:scale(.97)}
+.evidencia-label{transition:all .15s ease}
+.evidencia-label:hover{opacity:.8;transform:scale(.98)}
+.dash-cedi-card{transition:box-shadow .2s ease}
+.dash-cedi-card:hover{box-shadow:0 8px 28px rgba(0,0,0,.1)}
+.cal-cell{transition:transform .12s cubic-bezier(.34,1.56,.64,1),opacity .12s}
+.cal-cell:hover{transform:scale(1.15);z-index:2;position:relative}
+@keyframes fadeInUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes popIn{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}
+.page.active>.card,.page.active>.kpi-grid,.page.active .dash-cedi-card,.page.active .dash-grid,.page.active #dashCalendar{animation:fadeInUp .3s ease both}
+.modal-overlay.open .modal{animation:popIn .22s cubic-bezier(.34,1.56,.64,1) both}
+.toast{animation:fadeInUp .25s ease both}
 </style>
 </head>
 <body>
@@ -578,7 +611,7 @@ function navigateTo(page){
   switch(page){
     case 'kanban': renderKanban(); document.getElementById('pageKanban').classList.add('active'); break;
     case 'formulario': renderFormulario(); document.getElementById('pageFormulario').classList.add('active'); break;
-    case 'dashboard': renderDashboard(); document.getElementById('pageDashboard').classList.add('active'); break;
+    case 'dashboard': document.getElementById('pageDashboard').classList.add('active'); renderDashboard(); break;
     case 'usuarios': renderUsuarios(); document.getElementById('pageUsuarios').classList.add('active'); break;
   }
 }
@@ -730,27 +763,29 @@ function renderKanban(){
   const board=cols.map(col=>{
     const colAudits=filtered.filter(a=>a.status===col.key);
     const cards=colAudits.length ? colAudits.map(a=>{
-      const pct=calcProgress(a);
-      const pbcls=pct>=80?'pb-green':pct>=50?'pb-yellow':'pb-red';
+      const score=calcAuditScore(a);
+      const resultado=score.overall!==null?score.overall:null;
+      const pbcls=resultado===null?'pb-gray':resultado>=80?'pb-green':resultado>=50?'pb-yellow':'pb-red';
       const dl=a.deadline?(a.deadline.toDate?a.deadline.toDate():new Date(a.deadline)):null;
       const dlStr=dl?dl.toLocaleDateString('es-GT'):'—';
-      // SLA urgency — find any vencido hallazgo
       const hasVencido=a.hallazgoSLA&&Object.values(a.hallazgoSLA).some(s=>{
         if(!s||!a.createdAt) return false;
         const created=a.createdAt.toDate?a.createdAt.toDate():new Date(a.createdAt);
         return new Date(created.getTime()+Number(s)*3600000)<new Date();
       });
+      const solverLine=a.lastSolvedBy?`<div>✅ Solucionado por: <strong>${a.lastSolvedBy}</strong></div>`:'';
       return `<div class="kanban-card${a.status==='late'?' late-card':''}" onclick="openAuditModal('${a.id}')">
         <div class="kc-id">#${a.id.substring(0,8).toUpperCase()}${a.guestAudit?'&nbsp;<span style="background:#f3e8ff;color:#6b21a8;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px">👤 Rack</span>':''}</div>
         <div class="kc-area">📍 ${a.area||'—'}</div>
         <div class="kc-meta" style="line-height:1.8">
           <div>📝 Creado por: <strong>${a.auditorName||'—'}</strong></div>
           ${role!=='operador'?`<div>👔 Asignado a: <strong>${a.supervisorName||'—'}</strong></div>`:''}
+          ${solverLine}
         </div>
         ${hasVencido&&a.status!=='closed'?'<span class="sla-vencido">⚡ SLA vencido</span>':''}
-        <div class="progress-bar-wrap"><div class="progress-bar ${pbcls}" style="width:${pct}%"></div></div>
+        <div class="progress-bar-wrap"><div class="progress-bar ${pbcls}" style="width:${resultado??0}%"></div></div>
         <div class="kc-footer">
-          <span style="font-size:10px;color:var(--muted)">Avance ${pct}%</span>
+          <span style="font-size:10px;color:var(--muted)">Resultado: <strong style="color:${resultado===null?'var(--muted)':resultado>=80?'#16a34a':resultado>=50?'#d97706':'#dc2626'}">${resultado!==null?resultado+'%':'Sin datos'}</strong></span>
           <span style="font-size:10px;color:var(--muted)">📅 ${dlStr}</span>
         </div>
       </div>`;
@@ -1010,7 +1045,10 @@ async function openAuditModal(auditId){
       <button class="btn btn-sm" onclick="navigator.clipboard.writeText('${audit.auditCode}').then(()=>showToast('Código copiado','success'))">📋 Copiar código</button>
     </div>`;
   }
-  body+=`<div style="margin-bottom:16px;font-size:13px"><strong>Observaciones:</strong> ${audit.obs||'—'}</div>`;
+  body+=`<div style="margin-bottom:16px;font-size:13px;display:flex;flex-wrap:wrap;gap:16px">
+    <span><strong>Observaciones:</strong> ${audit.obs||'—'}</span>
+    ${audit.lastSolvedBy?`<span style="color:#16a34a"><strong>✅ Solucionado por:</strong> ${audit.lastSolvedBy} · <span style="font-family:monospace;font-size:11px">#${audit.id.substring(0,8).toUpperCase()}</span></span>`:''}
+  </div>`;
   body+=CRITERIOS_5S.map((sec,si)=>{
     const yes=sec.items.filter((_,ii)=>audit.criterios?.[`s${si}_i${ii}`]==='si').length;
     const pct=Math.round(yes/sec.items.length*100);
@@ -1054,8 +1092,8 @@ async function openAuditModal(auditId){
       </table></div>`;
   }).join('');
 
-  // Sección de notas con @menciones (solo admin)
-  if(role==='admin'){
+  // Sección de notas con @menciones (admin y supervisor)
+  if(role==='admin'||role==='supervisor'){
     const notas=(audit.notas||[]).slice().reverse();
     const notasHtml=notas.length
       ?notas.map(n=>{
@@ -1517,7 +1555,7 @@ function renderNotifications(){
   list.innerHTML=!notifications.length?'<div class="empty-state">Sin notificaciones</div>'
     :notifications.map(n=>{
       const t=n.createdAt?.toDate?n.createdAt.toDate():new Date();
-      return `<div class="notif-item${n.read?'':' unread'}" onclick="markRead('${n.id}')">
+      return `<div class="notif-item${n.read?'':' unread'}" onclick="openNotif('${n.id}','${n.auditId||''}')">
         <div class="notif-title">${n.title||'Notificación'}</div>
         <div class="notif-body">${n.body||''}</div>
         <div class="notif-time">${t.toLocaleDateString('es-GT')} ${t.toLocaleTimeString('es-GT',{hour:'2-digit',minute:'2-digit'})}</div>
@@ -1526,6 +1564,15 @@ function renderNotifications(){
 }
 
 async function markRead(id){ await db.collection('notifications').doc(id).update({read:true}); }
+
+async function openNotif(notifId,auditId){
+  await markRead(notifId);
+  toggleNotifPanel();
+  if(auditId){
+    navigateTo('kanban');
+    setTimeout(()=>openAuditModal(auditId),300);
+  }
+}
 
 function toggleNotifPanel(){
   document.getElementById('notifPanel').classList.toggle('open');
@@ -1792,12 +1839,15 @@ async function lookupByCode(){
 
 function renderSolveForm(audit,name){
   window._rackSolveAudit=audit;
-  const hasNo=Object.values(audit.criterios||{}).some(v=>v==='no');
+  // hasNo: solo cuenta ítems 'no' que todavía no tienen solución
+  const hasNo=Object.entries(audit.criterios||{}).some(([k,v])=>v==='no'&&!(audit.soluciones?.[k]||'').trim());
   const rows=CRITERIOS_5S.map((sec,si)=>sec.items.map((item,ii)=>{
     const key=`s${si}_i${ii}`;
     if(audit.criterios?.[key]!=='no') return '';
+    // Ocultar ítems que ya tienen solución registrada (por rack o por supervisor)
+    if((audit.soluciones?.[key]||'').trim()) return '';
     const hallazgo=audit.hallazgos?.[key]||'—';
-    const solucion=audit.soluciones?.[key]||'';
+    const solucion='';
     const evA=audit.evidencias_auditor?.[key]||[];
     return `<div style="border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px">
       <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-bottom:4px">${sec.s} — Criterio ${ii+1}</div>
@@ -1827,6 +1877,14 @@ function renderSolveForm(audit,name){
 
 async function submitGuestSolution(auditId,solveName){
   const audit=window._rackSolveAudit;
+  const confirmed=confirm(
+    '⚠️ Confirmación requerida\n\n'+
+    'Estás a punto de registrar tus soluciones de forma definitiva.\n\n'+
+    'Una vez guardadas, no podrán editarse ni modificarse.\n'+
+    'Asegúrate de que toda la información ingresada sea correcta antes de continuar.\n\n'+
+    '¿Deseas confirmar y guardar?'
+  );
+  if(!confirmed) return;
   const soluciones={};
   CRITERIOS_5S.forEach((sec,si)=>sec.items.forEach((_,ii)=>{
     const key=`s${si}_i${ii}`;
