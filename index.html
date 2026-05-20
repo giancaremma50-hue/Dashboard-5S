@@ -256,11 +256,11 @@ select:focus,input:focus{border-color:var(--primary)}
 .s-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:12px}
 .s-chip{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;color:#fff}
 .s-chip-green{background:#16a34a}.s-chip-amber{background:#d97706}.s-chip-red{background:#dc2626}.s-chip-gray{background:#94a3b8}
-.cal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
-.cal-month-label{font-size:15px;font-weight:800}
-.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
-.cal-day-label{text-align:center;font-size:10px;font-weight:700;color:var(--muted);padding-bottom:4px}
-.cal-cell{aspect-ratio:1;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;font-weight:700;cursor:default;transition:transform .1s}
+.cal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.cal-month-label{font-size:13px;font-weight:800}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.cal-day-label{text-align:center;font-size:9px;font-weight:700;color:var(--muted);padding-bottom:3px}
+.cal-cell{aspect-ratio:1;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:9px;font-weight:700;cursor:default;transition:transform .1s}
 .cal-cell:hover{transform:scale(1.08)}
 .cal-empty{background:transparent}
 .cal-nodata{background:var(--soft);color:var(--muted)}
@@ -1088,16 +1088,26 @@ async function openAuditModal(auditId){
       const solverName=audit.solucionadoPor?.[key]||'';
       const evA=audit.evidencias_auditor?.[key]||[];
       const evS=audit.evidencias_supervisor?.[key]||[];
-      const ynDisp=val==='si'?'<span class="pill pill-green">✓ Sí</span>':val==='no'?'<span class="pill pill-red">✗ No</span>':'<span class="pill">—</span>';
+      const isResolved=val==='no'&&(solucion.trim()||evS.length>0);
+      const ynDisp=val==='si'
+        ?'<span class="pill pill-green">✓ Sí</span>'
+        :val==='no'
+          ?`<span class="pill pill-red">✗ No</span>${isResolved?'<br><span class="pill pill-green" style="font-size:10px;display:inline-block;margin-top:3px">✓ Resuelto</span>':''}`
+          :'<span class="pill">—</span>';
       const evAhtml=evA.map(u=>`<img src="${u}" style="width:36px;height:36px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer;margin:2px" onclick="window.open('${u}','_blank')">`).join('');
       const evShtml=evS.map(u=>`<img src="${u}" style="width:36px;height:36px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer;margin:2px" onclick="window.open('${u}','_blank')">`).join('');
       const solverTag=solverName?`<div style="font-size:10px;color:#16a34a;margin-top:4px;font-weight:700">✅ ${solverName}</div>`:'';
-      const solCol=canSolve
-        ? `<td class="solucion-col"><textarea id="sol-${si}-${ii}" placeholder="Detalle de la solución...">${solucion}</textarea>${solverTag}</td>
+      let solCol;
+      if(val==='si'){
+        solCol='<td style="color:var(--muted);font-size:11px;text-align:center">—</td><td style="color:var(--muted);font-size:11px;text-align:center">—</td>';
+      } else if(canSolve){
+        solCol=`<td class="solucion-col"><textarea id="sol-${si}-${ii}" placeholder="Detalle de la solución...">${solucion}</textarea>${solverTag}</td>
            <td><label class="evidencia-label" for="sev-${si}-${ii}">📷 Evidencia</label>
            <input type="file" id="sev-${si}-${ii}" style="display:none" accept="image/*" multiple onchange="previewSupEv(${si},${ii},this)">
-           <div class="evidencia-thumbs" id="sthumbs-${si}-${ii}">${evShtml}</div></td>`
-        : `<td style="font-size:12px">${solucion||'—'}${solverTag}</td><td><div class="evidencia-thumbs">${evShtml||'—'}</div></td>`;
+           <div class="evidencia-thumbs" id="sthumbs-${si}-${ii}">${evShtml}</div></td>`;
+      } else {
+        solCol=`<td style="font-size:12px">${solucion||'—'}${solverTag}</td><td><div class="evidencia-thumbs">${evShtml||'—'}</div></td>`;
+      }
       return `<tr>
         <td style="color:var(--muted);font-weight:700">${ii+1}</td>
         <td style="font-weight:600;line-height:1.4">${item}</td>
@@ -1160,20 +1170,41 @@ async function openAuditModal(auditId){
 function previewSupEv(si,ii,input){
   const key=`s${si}_i${ii}`;
   if(!supEvidenceFiles[key]) supEvidenceFiles[key]=[];
-  Array.from(input.files).forEach(f=>supEvidenceFiles[key].push(f));
+  if(input) Array.from(input.files).forEach(f=>supEvidenceFiles[key].push(f));
+  renderThumbsSup(si,ii);
+}
+function renderThumbsSup(si,ii){
+  const key=`s${si}_i${ii}`;
   const thumbs=document.getElementById(`sthumbs-${si}-${ii}`);
   if(!thumbs) return;
+  thumbs.innerHTML='';
   const existing=currentAudit.evidencias_supervisor?.[key]||[];
-  thumbs.innerHTML=existing.map(u=>`<img src="${u}" style="width:36px;height:36px;object-fit:cover;border-radius:6px;border:1px solid var(--border);margin:2px">`).join('');
-  supEvidenceFiles[key].forEach(f=>{
-    const img=document.createElement('img');
-    img.src=URL.createObjectURL(f); img.style.cssText='width:36px;height:36px;object-fit:cover;border-radius:6px;border:1px solid var(--border);margin:2px';
-    thumbs.appendChild(img);
+  existing.forEach(u=>{
+    const w=document.createElement('div');
+    w.style.cssText='position:relative;display:inline-block;margin:3px;vertical-align:top';
+    w.innerHTML=`<img src="${u}" style="width:52px;height:52px;object-fit:cover;border-radius:8px;border:1.5px solid var(--border);cursor:pointer;display:block" onclick="window.open('${u}','_blank')">
+      <span style="position:absolute;bottom:2px;left:2px;background:rgba(0,0,0,.5);color:#fff;font-size:8px;border-radius:3px;padding:1px 3px">Guardada</span>`;
+    thumbs.appendChild(w);
   });
+  (supEvidenceFiles[key]||[]).forEach((f,idx)=>{
+    const url=URL.createObjectURL(f);
+    const w=document.createElement('div');
+    w.style.cssText='position:relative;display:inline-block;margin:3px;vertical-align:top';
+    w.innerHTML=`<img src="${url}" style="width:52px;height:52px;object-fit:cover;border-radius:8px;border:2px solid #3b82f6;display:block">
+      <button onclick="removeSupFile(${si},${ii},${idx})" style="position:absolute;top:-5px;right:-5px;width:20px;height:20px;border-radius:50%;background:#dc2626;color:#fff;border:none;cursor:pointer;font-size:12px;line-height:20px;text-align:center;padding:0;font-weight:900">×</button>`;
+    thumbs.appendChild(w);
+  });
+}
+function removeSupFile(si,ii,idx){
+  const key=`s${si}_i${ii}`;
+  if(supEvidenceFiles[key]) supEvidenceFiles[key].splice(idx,1);
+  renderThumbsSup(si,ii);
 }
 
 async function saveProgress(){
   if(!currentAudit) return;
+  const saveBtn=document.querySelector('button[onclick="saveProgress()"]');
+  if(saveBtn){saveBtn.disabled=true;saveBtn.textContent='⏳ Guardando...';}
   const solverName=currentUserData?.name||currentUserData?.email||'Supervisor';
   const updates={status:'inprog',updatedAt:firebase.firestore.FieldValue.serverTimestamp(),lastSolvedBy:solverName};
   CRITERIOS_5S.forEach((sec,si)=>sec.items.forEach((_,ii)=>{
@@ -1208,7 +1239,10 @@ async function saveProgress(){
     Object.keys(supEvidenceFiles).forEach(k=>delete supEvidenceFiles[k]);
     closeAuditModal();
     showBigSuccessToast('Tu solución ha sido registrada'+(photoErrors?` (${photoErrors} foto(s) no se pudieron subir)`:''));
-  }catch(e){showToast('Error: '+e.message,'error');}
+  }catch(e){
+    if(saveBtn&&document.body.contains(saveBtn)){saveBtn.disabled=false;saveBtn.textContent='💾 Guardar progreso';}
+    showToast('Error: '+e.message,'error');
+  }
 }
 
 async function closeAuditAction(){
@@ -1318,10 +1352,10 @@ function renderCalendar(){
       <button class="btn btn-sm" onclick="dashCalNav(1)">›</button>
     </div>
     <div class="cal-grid">${dayLabels}${blanks}${cells}</div>
-    <div style="display:flex;gap:14px;margin-top:10px;font-size:11px;color:var(--muted)">
-      <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;background:#16a34a;border-radius:3px;display:inline-block"></span>≥80%</span>
-      <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;background:#d97706;border-radius:3px;display:inline-block"></span>50–79%</span>
-      <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;background:#dc2626;border-radius:3px;display:inline-block"></span>&lt;50%</span>
+    <div style="display:flex;gap:8px;margin-top:8px;font-size:9px;color:var(--muted);flex-wrap:wrap">
+      <span style="display:flex;align-items:center;gap:3px"><span style="width:9px;height:9px;background:#16a34a;border-radius:2px;display:inline-block"></span>≥80%</span>
+      <span style="display:flex;align-items:center;gap:3px"><span style="width:9px;height:9px;background:#d97706;border-radius:2px;display:inline-block"></span>50–79%</span>
+      <span style="display:flex;align-items:center;gap:3px"><span style="width:9px;height:9px;background:#dc2626;border-radius:2px;display:inline-block"></span>&lt;50%</span>
     </div>
   </div>`;
 }
@@ -1448,24 +1482,29 @@ function renderDashboard(){
     <p class="dash-section-title">🏭 Por área / rack</p>
     <div class="dash-grid">${areaCardsHtml}</div>
 
-    <p class="dash-section-title">📅 Calendario de cumplimiento</p>
-    <div id="dashCalendar">${renderCalendar()}</div>
-
-    <p class="dash-section-title">📈 Tendencia</p>
-    <div class="card">
-      <div class="trend-filters">
-        <select id="trendArea" onchange="renderTrendChart()">
-          <option value="">Todos los racks</option>
-          ${AREAS.map(a=>`<option value="${a}">${a}</option>`).join('')}
-        </select>
-        <select id="trendRange" onchange="renderTrendChart()">
-          <option value="7">Últimos 7 días</option>
-          <option value="30" selected>Últimos 30 días</option>
-          <option value="90">Últimos 3 meses</option>
-          <option value="365">Último año</option>
-        </select>
+    <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+      <div style="flex:3;min-width:260px">
+        <p class="dash-section-title">📈 Tendencia</p>
+        <div class="card">
+          <div class="trend-filters">
+            <select id="trendArea" onchange="renderTrendChart()">
+              <option value="">Todos los racks</option>
+              ${AREAS.map(a=>`<option value="${a}">${a}</option>`).join('')}
+            </select>
+            <select id="trendRange" onchange="renderTrendChart()">
+              <option value="7">Últimos 7 días</option>
+              <option value="30" selected>Últimos 30 días</option>
+              <option value="90">Últimos 3 meses</option>
+              <option value="365">Último año</option>
+            </select>
+          </div>
+          <div style="position:relative;height:200px"><canvas id="trendCanvas"></canvas></div>
+        </div>
       </div>
-      <div style="position:relative;height:220px"><canvas id="trendCanvas"></canvas></div>
+      <div style="flex:2;min-width:220px">
+        <p class="dash-section-title">📅 Calendario</p>
+        <div id="dashCalendar">${renderCalendar()}</div>
+      </div>
     </div>
   `;
 
@@ -1914,6 +1953,8 @@ async function submitGuestSolution(auditId,solveName){
     '¿Deseas confirmar y guardar?'
   );
   if(!confirmed) return;
+  const saveBtn=document.querySelector('button[onclick*="submitGuestSolution"]');
+  if(saveBtn){saveBtn.disabled=true;saveBtn.innerHTML='⏳ Guardando...';}
   const updates={status:'inprog',updatedAt:firebase.firestore.FieldValue.serverTimestamp(),lastSolvedBy:solveName};
   CRITERIOS_5S.forEach((sec,si)=>sec.items.forEach((_,ii)=>{
     const key=`s${si}_i${ii}`;
@@ -1950,7 +1991,10 @@ async function submitGuestSolution(auditId,solveName){
     await auth.signOut();
     Object.keys(rackSolveFiles).forEach(k=>delete rackSolveFiles[k]);
     showSuccessAnimation();
-  }catch(e){showToast('Error: '+e.message,'error');}
+  }catch(e){
+    if(saveBtn&&document.body.contains(saveBtn)){saveBtn.disabled=false;saveBtn.innerHTML='✅ Guardar solución';}
+    showToast('Error: '+e.message,'error');
+  }
 }
 
 function showBigSuccessToast(msg){
@@ -2001,15 +2045,27 @@ function showSuccessAnimation(){
 function previewRackSolveEv(si,ii,input){
   const key=`s${si}_i${ii}`;
   if(!rackSolveFiles[key]) rackSolveFiles[key]=[];
-  Array.from(input.files).forEach(f=>rackSolveFiles[key].push(f));
+  if(input) Array.from(input.files).forEach(f=>rackSolveFiles[key].push(f));
+  renderThumbsRack(si,ii);
+}
+function renderThumbsRack(si,ii){
+  const key=`s${si}_i${ii}`;
   const thumbs=document.getElementById(`rsthumbs-${si}-${ii}`);
   if(!thumbs) return;
-  rackSolveFiles[key].forEach(f=>{
-    const img=document.createElement('img');
-    img.src=URL.createObjectURL(f);
-    img.style.cssText='width:42px;height:42px;object-fit:cover;border-radius:6px;border:1px solid var(--border);margin:2px';
-    thumbs.appendChild(img);
+  thumbs.innerHTML='';
+  (rackSolveFiles[key]||[]).forEach((f,idx)=>{
+    const url=URL.createObjectURL(f);
+    const w=document.createElement('div');
+    w.style.cssText='position:relative;display:inline-block;margin:3px;vertical-align:top';
+    w.innerHTML=`<img src="${url}" style="width:56px;height:56px;object-fit:cover;border-radius:10px;border:2px solid #3b82f6;display:block">
+      <button onclick="removeRackFile(${si},${ii},${idx})" style="position:absolute;top:-5px;right:-5px;width:20px;height:20px;border-radius:50%;background:#dc2626;color:#fff;border:none;cursor:pointer;font-size:12px;line-height:20px;text-align:center;padding:0;font-weight:900">×</button>`;
+    thumbs.appendChild(w);
   });
+}
+function removeRackFile(si,ii,idx){
+  const key=`s${si}_i${ii}`;
+  if(rackSolveFiles[key]) rackSolveFiles[key].splice(idx,1);
+  renderThumbsRack(si,ii);
 }
 
 function generateAuditCode(){
