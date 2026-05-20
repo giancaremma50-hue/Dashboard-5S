@@ -1186,23 +1186,28 @@ async function saveProgress(){
   }));
   showToast('Guardando...','');
   try{
+    // 1. Guardar soluciones primero (siempre)
+    await db.collection('audits').doc(currentAudit.id).update(updates);
+    // 2. Subir fotos como best-effort (un fallo no bloquea el guardado)
+    let photoErrors=0;
     for(const [key,files] of Object.entries(supEvidenceFiles)){
       for(const file of files){
-        const path=`audits/${currentAudit.id}/supervisor/${key}_${Date.now()}_${file.name}`;
-        const snap2=await storage.ref(path).put(file);
-        const url=await snap2.ref.getDownloadURL();
-        await db.collection('audits').doc(currentAudit.id).update({[`evidencias_supervisor.${key}`]:firebase.firestore.FieldValue.arrayUnion(url)});
+        try{
+          const path=`audits/${currentAudit.id}/supervisor/${key}_${Date.now()}_${file.name}`;
+          const snap2=await storage.ref(path).put(file);
+          const url=await snap2.ref.getDownloadURL();
+          await db.collection('audits').doc(currentAudit.id).update({[`evidencias_supervisor.${key}`]:firebase.firestore.FieldValue.arrayUnion(url)});
+        }catch(_){photoErrors++;}
       }
     }
-    await db.collection('audits').doc(currentAudit.id).update(updates);
     await createNotif(currentAudit.auditorId,{
       title:'Avance registrado',
       body:`${currentUserData.name||currentUserData.email} actualizó la solución de auditoría #${currentAudit.id.substring(0,8).toUpperCase()}`,
       auditId:currentAudit.id, type:'update'
     });
     Object.keys(supEvidenceFiles).forEach(k=>delete supEvidenceFiles[k]);
-    showToast('✅ Progreso guardado','success');
     closeAuditModal();
+    showBigSuccessToast('Tu solución ha sido registrada'+(photoErrors?` (${photoErrors} foto(s) no se pudieron subir)`:''));
   }catch(e){showToast('Error: '+e.message,'error');}
 }
 
@@ -1920,15 +1925,19 @@ async function submitGuestSolution(auditId,solveName){
   }));
   showToast('Guardando solución...','');
   try{
+    // 1. Guardar soluciones primero (siempre)
+    await db.collection('audits').doc(auditId).update(updates);
+    // 2. Subir fotos como best-effort
     for(const [key,files] of Object.entries(rackSolveFiles)){
       for(const file of files){
-        const path=`audits/${auditId}/supervisor/${key}_${Date.now()}_${file.name}`;
-        const snap2=await storage.ref(path).put(file);
-        const url=await snap2.ref.getDownloadURL();
-        await db.collection('audits').doc(auditId).update({[`evidencias_supervisor.${key}`]:firebase.firestore.FieldValue.arrayUnion(url)});
+        try{
+          const path=`audits/${auditId}/supervisor/${key}_${Date.now()}_${file.name}`;
+          const snap2=await storage.ref(path).put(file);
+          const url=await snap2.ref.getDownloadURL();
+          await db.collection('audits').doc(auditId).update({[`evidencias_supervisor.${key}`]:firebase.firestore.FieldValue.arrayUnion(url)});
+        }catch(_){}
       }
     }
-    await db.collection('audits').doc(auditId).update(updates);
     if(audit?.supervisorId){
       await db.collection('notifications').add({
         recipientId:audit.supervisorId,
@@ -1942,6 +1951,26 @@ async function submitGuestSolution(auditId,solveName){
     Object.keys(rackSolveFiles).forEach(k=>delete rackSolveFiles[k]);
     showSuccessAnimation();
   }catch(e){showToast('Error: '+e.message,'error');}
+}
+
+function showBigSuccessToast(msg){
+  const dim=document.createElement('div');
+  dim.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9998;animation:fadeInUp .2s ease';
+  const card=document.createElement('div');
+  card.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;background:#fff;border-radius:20px;padding:36px 44px;box-shadow:0 24px 64px rgba(0,0,0,.22);display:flex;flex-direction:column;align-items:center;gap:16px;text-align:center;min-width:260px;max-width:340px;animation:popIn .4s cubic-bezier(.34,1.56,.64,1)';
+  card.innerHTML=`
+    <div style="width:68px;height:68px;border-radius:50%;background:#16a34a;display:flex;align-items:center;justify-content:center">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="38" height="38"><polyline points="20 6 9 17 4 12"></polyline></svg>
+    </div>
+    <div style="font-size:15px;font-weight:800;color:#15803d;line-height:1.4">${msg}</div>`;
+  document.body.appendChild(dim);
+  document.body.appendChild(card);
+  const remove=()=>{
+    [card,dim].forEach(el=>{el.style.transition='opacity .3s';el.style.opacity='0';});
+    setTimeout(()=>{card.remove();dim.remove();},300);
+  };
+  setTimeout(remove,2200);
+  dim.addEventListener('click',remove);
 }
 
 function showSuccessAnimation(){
