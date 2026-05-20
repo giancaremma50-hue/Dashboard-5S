@@ -537,8 +537,11 @@ async function doLogin(){
   const email=document.getElementById('authEmail').value.trim();
   const pass=document.getElementById('authPass').value;
   if(!email||!pass){showAuthErr('Completa todos los campos');return;}
+  const btn=document.querySelector('[onclick="doLogin()"]');
+  btnLoad(btn,'⏳ Ingresando...');
   try{ await auth.signInWithEmailAndPassword(email,pass); }
   catch(e){
+    btnReset(btn);
     const m={'auth/user-not-found':'Usuario no encontrado','auth/wrong-password':'Contraseña incorrecta',
       'auth/invalid-email':'Correo inválido','auth/too-many-requests':'Demasiados intentos',
       'auth/requests-from-referer-are-blocked':'Dominio no autorizado en Firebase. Contacta al admin.'};
@@ -1007,6 +1010,8 @@ async function submitFormulario(){
     hallazgos[key]=document.getElementById(`hallazgo-${si}-${ii}`)?.value||'';
     if(ynState[key]==='no') hallazgoSLA[key]=durationH;
   }));
+  const submitBtn=document.querySelector('[onclick="submitFormulario()"]');
+  btnLoad(submitBtn,'⏳ Enviando...');
   showToast('Guardando auditoría...','');
   try{
     const docRef=await db.collection('audits').add({
@@ -1038,8 +1043,8 @@ async function submitFormulario(){
     showToast('✅ Auditoría enviada correctamente','success');
     Object.keys(ynState).forEach(k=>delete ynState[k]);
     Object.keys(evidenceFiles).forEach(k=>delete evidenceFiles[k]);
-    renderFormulario();
-  }catch(e){showToast('Error: '+e.message,'error');}
+    renderFormulario(); // re-renders DOM, button destroyed — no need to reset
+  }catch(e){btnReset(submitBtn);showToast('Error: '+e.message,'error');}
 }
 
 // ═══════════════════════════════════════
@@ -1203,8 +1208,8 @@ function removeSupFile(si,ii,idx){
 
 async function saveProgress(){
   if(!currentAudit) return;
-  const saveBtn=document.querySelector('button[onclick="saveProgress()"]');
-  if(saveBtn){saveBtn.disabled=true;saveBtn.textContent='⏳ Guardando...';}
+  const saveBtn=document.querySelector('[onclick="saveProgress()"]');
+  btnLoad(saveBtn,'⏳ Guardando...');
   const solverName=currentUserData?.name||currentUserData?.email||'Supervisor';
   const updates={status:'inprog',updatedAt:firebase.firestore.FieldValue.serverTimestamp(),lastSolvedBy:solverName};
   CRITERIOS_5S.forEach((sec,si)=>sec.items.forEach((_,ii)=>{
@@ -1239,29 +1244,34 @@ async function saveProgress(){
     Object.keys(supEvidenceFiles).forEach(k=>delete supEvidenceFiles[k]);
     closeAuditModal();
     showBigSuccessToast('Tu solución ha sido registrada'+(photoErrors?` (${photoErrors} foto(s) no se pudieron subir)`:''));
-  }catch(e){
-    if(saveBtn&&document.body.contains(saveBtn)){saveBtn.disabled=false;saveBtn.textContent='💾 Guardar progreso';}
-    showToast('Error: '+e.message,'error');
-  }
+  }catch(e){btnReset(saveBtn);showToast('Error: '+e.message,'error');}
 }
 
 async function closeAuditAction(){
-  await saveProgress();
-  await db.collection('audits').doc(currentAudit.id).update({status:'closed',closedAt:firebase.firestore.FieldValue.serverTimestamp()});
-  await createNotif(currentAudit.auditorId,{
-    title:'Auditoría cerrada ✅',
-    body:`Tu auditoría #${currentAudit.id.substring(0,8).toUpperCase()} fue cerrada`,
-    auditId:currentAudit.id, type:'closed'
-  });
-  showToast('✅ Auditoría cerrada','success');
-  closeAuditModal();
+  const btn=document.querySelector('[onclick="closeAuditAction()"]');
+  btnLoad(btn,'⏳ Cerrando...');
+  try{
+    await saveProgress();
+    await db.collection('audits').doc(currentAudit.id).update({status:'closed',closedAt:firebase.firestore.FieldValue.serverTimestamp()});
+    await createNotif(currentAudit.auditorId,{
+      title:'Auditoría cerrada ✅',
+      body:`Tu auditoría #${currentAudit.id.substring(0,8).toUpperCase()} fue cerrada`,
+      auditId:currentAudit.id, type:'closed'
+    });
+    showToast('✅ Auditoría cerrada','success');
+    closeAuditModal();
+  }catch(e){btnReset(btn);showToast('Error: '+e.message,'error');}
 }
 
 async function deleteAudit(id){
   if(!confirm('¿Eliminar esta auditoría?')) return;
-  await db.collection('audits').doc(id).delete();
-  showToast('Eliminada','');
-  closeAuditModal();
+  const btn=document.querySelector('[onclick*="deleteAudit"]');
+  btnLoad(btn,'⏳ Eliminando...');
+  try{
+    await db.collection('audits').doc(id).delete();
+    showToast('Eliminada','');
+    closeAuditModal();
+  }catch(e){btnReset(btn);showToast('Error: '+e.message,'error');}
 }
 
 function closeAuditModal(){
@@ -1578,12 +1588,13 @@ async function changeRole(uid,role){
 
 async function resetPassword(email){
   if(!confirm(`¿Enviar correo de restablecimiento de contraseña a:\n${email}?`)) return;
+  const btn=document.querySelector(`[onclick*="resetPassword"]`);
+  btnLoad(btn,'⏳ Enviando...');
   try{
     await auth.sendPasswordResetEmail(email);
+    btnReset(btn);
     showToast(`✅ Correo enviado a ${email}`,'success');
-  }catch(e){
-    showToast('Error: '+e.message,'error');
-  }
+  }catch(e){btnReset(btn);showToast('Error: '+e.message,'error');}
 }
 
 async function createUser(){
@@ -1592,17 +1603,19 @@ async function createUser(){
   const pass=document.getElementById('nuPass')?.value;
   const role=document.getElementById('nuRole')?.value;
   if(!name||!email||!pass){showToast('Completa todos los campos','error');return;}
+  const btn=document.querySelector('[onclick="createUser()"]');
+  btnLoad(btn,'⏳ Creando...');
   try{
     const res=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FB_CONFIG.apiKey}`,{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({email,password:pass,returnSecureToken:false})
     });
     const data=await res.json();
-    if(data.error){showToast('Error: '+data.error.message,'error');return;}
+    if(data.error){btnReset(btn);showToast('Error: '+data.error.message,'error');return;}
     await db.collection('users').doc(data.localId).set({name,email,role,createdAt:new Date(),createdBy:currentUser.uid});
     showToast('✅ Usuario creado: '+email,'success');
-    renderUsuarios();
-  }catch(e){showToast('Error: '+e.message,'error');}
+    renderUsuarios(); // re-builds DOM, button destroyed
+  }catch(e){btnReset(btn);showToast('Error: '+e.message,'error');}
 }
 
 // ═══════════════════════════════════════
@@ -1656,6 +1669,19 @@ function showToast(msg,type=''){
   t.className='toast'+(type?' '+type:'');
   t.textContent=msg; wrap.appendChild(t);
   setTimeout(()=>t.remove(),3200);
+}
+// ── Loading helpers (aplican a TODOS los botones async) ──
+function btnLoad(btn,text='⏳ Cargando...'){
+  if(!btn) return;
+  btn._origHTML=btn.innerHTML;
+  btn._origDisabled=btn.disabled;
+  btn.disabled=true;
+  btn.textContent=text;
+}
+function btnReset(btn){
+  if(!btn||!document.body.contains(btn)) return;
+  btn.disabled=btn._origDisabled||false;
+  btn.innerHTML=btn._origHTML||btn.innerHTML;
 }
 
 // ═══════════════════════════════════════
@@ -1838,6 +1864,8 @@ async function submitGuestAudit(){
   }));
 
   const auditCode=generateAuditCode();
+  const guestBtn=document.querySelector('[onclick="submitGuestAudit()"]');
+  btnLoad(guestBtn,'⏳ Enviando...');
   showToast('Guardando auditoría...','');
   try{
     const docRef=await db.collection('audits').add({
@@ -1875,6 +1903,7 @@ async function submitGuestAudit(){
     Object.keys(ynState).forEach(k=>delete ynState[k]);
     Object.keys(evidenceFiles).forEach(k=>delete evidenceFiles[k]);
   }catch(e){
+    btnReset(guestBtn);
     showToast('Error: '+e.message,'error');
     try{await auth.signOut();}catch(_){}
   }
@@ -1885,10 +1914,13 @@ async function lookupByCode(){
   const name=document.getElementById('rSolveName')?.value.trim();
   if(!code){showToast('Ingresa el código','error');return;}
   if(!name){showToast('Ingresa tu nombre','error');return;}
+  const btn=document.querySelector('[onclick="lookupByCode()"]');
+  btnLoad(btn,'⏳ Buscando...');
   document.getElementById('rSolveResult').innerHTML='<div class="spinner"></div>';
   try{
     if(!auth.currentUser) await auth.signInAnonymously();
     const snap=await db.collection('audits').where('auditCode','==',code).limit(1).get();
+    btnReset(btn);
     if(snap.empty){
       document.getElementById('rSolveResult').innerHTML=`<div style="background:var(--redbg);color:var(--red);border-radius:12px;padding:14px;font-size:13px;text-align:center">❌ Código no encontrado. Verifica que esté escrito correctamente.</div>`;
       return;
@@ -1901,6 +1933,7 @@ async function lookupByCode(){
     }
     renderSolveForm(audit,name);
   }catch(e){
+    btnReset(btn);
     document.getElementById('rSolveResult').innerHTML=`<div style="color:var(--red);font-size:13px">Error: ${e.message}</div>`;
   }
 }
@@ -1953,8 +1986,8 @@ async function submitGuestSolution(auditId,solveName){
     '¿Deseas confirmar y guardar?'
   );
   if(!confirmed) return;
-  const saveBtn=document.querySelector('button[onclick*="submitGuestSolution"]');
-  if(saveBtn){saveBtn.disabled=true;saveBtn.innerHTML='⏳ Guardando...';}
+  const saveBtn=document.querySelector('[onclick*="submitGuestSolution"]');
+  btnLoad(saveBtn,'⏳ Guardando...');
   const updates={status:'inprog',updatedAt:firebase.firestore.FieldValue.serverTimestamp(),lastSolvedBy:solveName};
   CRITERIOS_5S.forEach((sec,si)=>sec.items.forEach((_,ii)=>{
     const key=`s${si}_i${ii}`;
@@ -1991,10 +2024,7 @@ async function submitGuestSolution(auditId,solveName){
     await auth.signOut();
     Object.keys(rackSolveFiles).forEach(k=>delete rackSolveFiles[k]);
     showSuccessAnimation();
-  }catch(e){
-    if(saveBtn&&document.body.contains(saveBtn)){saveBtn.disabled=false;saveBtn.innerHTML='✅ Guardar solución';}
-    showToast('Error: '+e.message,'error');
-  }
+  }catch(e){btnReset(saveBtn);showToast('Error: '+e.message,'error');}
 }
 
 function showBigSuccessToast(msg){
@@ -2166,6 +2196,8 @@ async function addNota(auditId){
   if(!textarea) return;
   const texto=textarea.value.trim();
   if(!texto){showToast('Escribe una nota','error');return;}
+  const notaBtn=document.querySelector('[onclick*="addNota"]');
+  btnLoad(notaBtn,'⏳ Guardando...');
   const nota={
     texto,
     mentions:pendingMentions.slice(),
@@ -2187,8 +2219,8 @@ async function addNota(auditId){
     }
     pendingMentions=[];
     showToast('✅ Nota agregada','success');
-    openAuditModal(auditId);
-  }catch(e){showToast('Error: '+e.message,'error');}
+    openAuditModal(auditId); // re-renders modal, button destroyed
+  }catch(e){btnReset(notaBtn);showToast('Error: '+e.message,'error');}
 }
 
 document.getElementById('authPass')?.addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
