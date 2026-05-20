@@ -1026,15 +1026,19 @@ async function submitFormulario(){
       collaborators:[],
       notas:[],
     });
-    // Upload evidence
+    // Upload evidence — best-effort, never blocks save
+    let photoErrors=0;
     for(const [key,files] of Object.entries(evidenceFiles)){
       for(const file of files){
-        const path=`audits/${docRef.id}/auditor/${key}_${Date.now()}_${file.name}`;
-        const snap2=await storage.ref(path).put(file);
-        const url=await snap2.ref.getDownloadURL();
-        await db.collection('audits').doc(docRef.id).update({[`evidencias_auditor.${key}`]:firebase.firestore.FieldValue.arrayUnion(url)});
+        try{
+          const path=`audits/${docRef.id}/auditor/${key}_${Date.now()}_${file.name}`;
+          const snap2=await storage.ref(path).put(file);
+          const url=await snap2.ref.getDownloadURL();
+          await db.collection('audits').doc(docRef.id).update({[`evidencias_auditor.${key}`]:firebase.firestore.FieldValue.arrayUnion(url)});
+        }catch(_){photoErrors++;}
       }
     }
+    if(photoErrors) showToast(`⚠ ${photoErrors} foto(s) no se pudieron subir`,'error');
     await createNotif(supervisorId,{
       title:'Nueva auditoría asignada',
       body:`${currentUserData.name||currentUserData.email} te asignó una auditoría 5S — ${area}`,
@@ -1883,12 +1887,15 @@ async function submitGuestAudit(){
       collaborators:[],
       notas:[],
     });
+    // Upload evidence — best-effort, never blocks save
     for(const [key,files] of Object.entries(evidenceFiles)){
       for(const file of files){
-        const path=`audits/${docRef.id}/auditor/${key}_${Date.now()}_${file.name}`;
-        const snap2=await storage.ref(path).put(file);
-        const url=await snap2.ref.getDownloadURL();
-        await db.collection('audits').doc(docRef.id).update({[`evidencias_auditor.${key}`]:firebase.firestore.FieldValue.arrayUnion(url)});
+        try{
+          const path=`audits/${docRef.id}/auditor/${key}_${Date.now()}_${file.name}`;
+          const snap2=await storage.ref(path).put(file);
+          const url=await snap2.ref.getDownloadURL();
+          await db.collection('audits').doc(docRef.id).update({[`evidencias_auditor.${key}`]:firebase.firestore.FieldValue.arrayUnion(url)});
+        }catch(_){}
       }
     }
     await db.collection('notifications').add({
