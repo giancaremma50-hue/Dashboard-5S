@@ -1158,8 +1158,8 @@ async function openAuditModal(auditId){
         :val==='no'
           ?`<span class="pill pill-red">✗ No</span>${isResolved?'<br><span class="pill pill-green" style="font-size:10px;display:inline-block;margin-top:3px">✓ Resuelto</span>':''}`
           :'<span class="pill">—</span>';
-      const evAhtml=evA.map(u=>`<img src="${u}" style="width:36px;height:36px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer;margin:2px" onclick="window.open('${u}','_blank')">`).join('');
-      const evShtml=evS.map(u=>`<img src="${u}" style="width:36px;height:36px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer;margin:2px" onclick="window.open('${u}','_blank')">`).join('');
+      const evAhtml=evA.map((u,i)=>`<a href="${u}" target="_blank" rel="noopener" style="display:inline-block;margin:2px;vertical-align:top" title="Ver foto ${i+1}"><img src="${u}" style="width:54px;height:54px;object-fit:cover;border-radius:8px;border:1.5px solid var(--border);cursor:pointer;display:block" onerror="this.outerHTML='<span style=&quot;font-size:11px;color:#1e40af;text-decoration:underline;cursor:pointer&quot; onclick=&quot;window.open(\\'${u}\\',\\'_blank\\')&quot;>📎 Foto ${i+1}</span>'"></a>`).join('');
+      const evShtml=evS.map((u,i)=>`<a href="${u}" target="_blank" rel="noopener" style="display:inline-block;margin:2px;vertical-align:top" title="Ver foto ${i+1}"><img src="${u}" style="width:54px;height:54px;object-fit:cover;border-radius:8px;border:1.5px solid var(--border);cursor:pointer;display:block" onerror="this.outerHTML='<span style=&quot;font-size:11px;color:#1e40af;text-decoration:underline;cursor:pointer&quot; onclick=&quot;window.open(\\'${u}\\',\\'_blank\\')&quot;>📎 Foto ${i+1}</span>'"></a>`).join('');
       const solverTag=solverName?`<div style="font-size:10px;color:#16a34a;margin-top:4px;font-weight:700">✅ ${solverName}</div>`:'';
       let solCol;
       if(val==='si'){
@@ -1222,6 +1222,9 @@ async function openAuditModal(auditId){
   if(canSolve && audit.status!=='closed'){
     footer+=`<button class="btn btn-sm" onclick="saveProgress()">💾 Guardar progreso</button>
       <button class="btn btn-success btn-sm" onclick="closeAuditAction()">✅ Marcar cerrada</button>`;
+  }
+  if(canSolve && audit.status==='closed'){
+    footer+=`<button class="btn btn-sm" style="border:1.5px solid #d97706;color:#92400e;background:#fff" onclick="reopenAudit('${audit.id}')">↩ Reabrir plan</button>`;
   }
   if(role==='admin'){
     footer+=`<button class="btn btn-danger btn-sm" onclick="deleteAudit('${audit.id}')">🗑 Eliminar</button>`;
@@ -1334,6 +1337,25 @@ async function closeAuditAction(){
       auditId:currentAudit.id, type:'closed'
     });
     showToast('✅ Auditoría cerrada','success');
+    closeAuditModal();
+  }catch(e){btnReset(btn);showToast('Error: '+e.message,'error');}
+}
+
+async function reopenAudit(auditId){
+  if(!confirm('¿Reabrir este plan? Volverá a la etapa "En curso".')) return;
+  const btn=document.querySelector(`[onclick="reopenAudit('${auditId}')"]`);
+  btnLoad(btn,'⏳ Reabriendo...');
+  try{
+    await db.collection('audits').doc(auditId).update({
+      status:'inprog',
+      closedAt:firebase.firestore.FieldValue.delete()
+    });
+    await createNotif(currentAudit.auditorId,{
+      title:'Plan reabierto 🔓',
+      body:`Tu auditoría #${auditId.substring(0,8).toUpperCase()} fue reabierta para revisión adicional`,
+      auditId,type:'update'
+    });
+    showToast('Plan reabierto','success');
     closeAuditModal();
   }catch(e){btnReset(btn);showToast('Error: '+e.message,'error');}
 }
