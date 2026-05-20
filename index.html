@@ -1032,13 +1032,21 @@ function stopCamera(){
 // ──────────────────────────────────────────────────────
 
 async function loadSupervisors(){
-  const snap=await db.collection('users').where('role','==','supervisor').get();
-  users=snap.docs.map(d=>({id:d.id,...d.data()}));
-  const sel=document.getElementById('fSupervisor');
-  if(!sel) return;
-  sel.innerHTML=users.length
-    ? users.map(u=>`<option value="${u.id}">${u.name||u.email}</option>`).join('')
-    : '<option value="">Sin supervisores disponibles</option>';
+  try{
+    const snap=await db.collection('users').where('role','==','supervisor').get();
+    users=snap.docs.map(d=>({id:d.id,...d.data()}));
+    // Cache para modo rack (usuario sin cuenta)
+    try{ localStorage.setItem('cachedSupervisors',JSON.stringify(users.map(u=>({id:u.id,name:u.name||u.email})))); }catch(_){}
+    const sel=document.getElementById('fSupervisor');
+    if(!sel) return;
+    sel.innerHTML=users.length
+      ? users.map(u=>`<option value="${u.id}">${u.name||u.email}</option>`).join('')
+      : '<option value="">Sin supervisores disponibles</option>';
+  }catch(e){
+    console.error('loadSupervisors:',e);
+    const sel=document.getElementById('fSupervisor');
+    if(sel) sel.innerHTML='<option value="">Error al cargar supervisores</option>';
+  }
 }
 
 async function submitFormulario(){
@@ -1923,24 +1931,35 @@ function showRackSolve(){
 async function loadRackSupervisors(){
   const sel=document.getElementById('rSupervisor');
   if(!sel) return;
-  // Asegurar sesión anónima activa antes de consultar Firestore
+
+  // 1. Mostrar caché inmediatamente mientras se intenta Firestore
+  let cached=[];
+  try{ cached=JSON.parse(localStorage.getItem('cachedSupervisors')||'[]'); }catch(_){}
+  if(cached.length){
+    sel.innerHTML=cached.map(u=>`<option value="${u.id}">${u.name}</option>`).join('');
+  }
+
+  // 2. Intentar actualizar desde Firestore con sesión anónima
   if(!auth.currentUser){
     try{ await auth.signInAnonymously(); }
-    catch(e){
-      sel.innerHTML='<option value="">⚠ Sin autenticación — activa Anonymous en Firebase</option>';
-      console.error('signInAnonymously falló:',e);
-      return;
-    }
+    catch(e){ console.warn('signInAnonymously:',e.message); }
   }
-  try{
-    const snap=await db.collection('users').where('role','==','supervisor').get();
-    const list=snap.docs.map(d=>({id:d.id,...d.data()}));
-    sel.innerHTML=list.length
-      ?list.map(u=>`<option value="${u.id}">${u.name||u.email}</option>`).join('')
-      :'<option value="">Sin supervisores registrados</option>';
-  }catch(e){
-    console.error('loadRackSupervisors error:',e);
-    sel.innerHTML='<option value="">⚠ Error de permisos — revisa reglas Firestore</option>';
+  if(auth.currentUser){
+    try{
+      const snap=await db.collection('users').where('role','==','supervisor').get();
+      const list=snap.docs.map(d=>({id:d.id,...d.data()}));
+      if(list.length){
+        sel.innerHTML=list.map(u=>`<option value="${u.id}">${u.name||u.email}</option>`).join('');
+        // Actualizar caché
+        try{ localStorage.setItem('cachedSupervisors',JSON.stringify(list.map(u=>({id:u.id,name:u.name||u.email})))); }catch(_){}
+        return;
+      }
+    }catch(e){ console.warn('loadRackSupervisors Firestore:',e.message); }
+  }
+
+  // 3. Si no hay caché ni Firestore, mostrar instrucción
+  if(!cached.length){
+    sel.innerHTML='<option value="">⚠ Sin supervisores — pide a un admin que abra la app primero</option>';
   }
 }
 
@@ -1955,12 +1974,25 @@ async function submitGuestAudit(){
 
   let anonUid;
   try{
-    const cred=await auth.signInAnonymously();
-    anonUid=cred.user.uid;
+    // Si ya hay sesión anónima activa (de loadRackSupervisors) reutilizarla
+    if(auth.currentUser){ anonUid=auth.currentUser.uid; }
+    else{
+      const cred=await auth.signInAnonymously();
+      anonUid=cred.user.uid;
+    }
   }catch(e){showToast('Error de conexión: '+e.message,'error');return;}
 
-  const supSnap=await db.collection('users').doc(supervisorId).get();
-  const sup=supSnap.exists?supSnap.data():{};
+  // Obtener nombre del supervisor (best-effort — puede fallar si reglas lo bloquean)
+  let sup={};
+  try{
+    const supSnap=await db.collection('users').doc(supervisorId).get();
+    if(supSnap.exists) sup=supSnap.data();
+  }catch(_){
+    // Usar nombre del caché si está disponible
+    const cached=JSON.parse(localStorage.getItem('cachedSupervisors')||'[]');
+    const found=cached.find(u=>u.id===supervisorId);
+    if(found) sup={name:found.name};
+  }
 
   const criterios={},hallazgos={},hallazgoSLA={};
   CRITERIOS_5S.forEach((sec,si)=>sec.items.forEach((_,ii)=>{
