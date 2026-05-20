@@ -1546,13 +1546,27 @@ function showRackSolve(){
 }
 
 async function loadRackSupervisors(){
-  const snap=await db.collection('users').where('role','==','supervisor').get();
   const sel=document.getElementById('rSupervisor');
   if(!sel) return;
-  const list=snap.docs.map(d=>({id:d.id,...d.data()}));
-  sel.innerHTML=list.length
-    ?list.map(u=>`<option value="${u.id}">${u.name||u.email}</option>`).join('')
-    :'<option value="">Sin supervisores disponibles</option>';
+  // Asegurar sesión anónima activa antes de consultar Firestore
+  if(!auth.currentUser){
+    try{ await auth.signInAnonymously(); }
+    catch(e){
+      sel.innerHTML='<option value="">⚠ Sin autenticación — activa Anonymous en Firebase</option>';
+      console.error('signInAnonymously falló:',e);
+      return;
+    }
+  }
+  try{
+    const snap=await db.collection('users').where('role','==','supervisor').get();
+    const list=snap.docs.map(d=>({id:d.id,...d.data()}));
+    sel.innerHTML=list.length
+      ?list.map(u=>`<option value="${u.id}">${u.name||u.email}</option>`).join('')
+      :'<option value="">Sin supervisores registrados</option>';
+  }catch(e){
+    console.error('loadRackSupervisors error:',e);
+    sel.innerHTML='<option value="">⚠ Error de permisos — revisa reglas Firestore</option>';
+  }
 }
 
 async function submitGuestAudit(){
