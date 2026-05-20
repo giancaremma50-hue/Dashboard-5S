@@ -9,6 +9,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -210,6 +211,34 @@ select:focus,input:focus{border-color:var(--primary)}
 @keyframes slideUp{from{opacity:0;transform:translateY(10px)}}
 @media(max-width:900px){.kanban-board{grid-template-columns:1fr 1fr}.dash-grid{grid-template-columns:1fr}}
 @media(max-width:640px){.kanban-board{grid-template-columns:1fr}.sidebar{display:none}.main{margin-left:0}.audit-header-grid{grid-template-columns:1fr}}
+
+/* RACK SCREEN */
+#rackScreen{display:none;align-items:center;justify-content:center;min-height:100vh;background:var(--primary);padding:24px;flex-direction:column}
+.rack-box{background:#fff;border-radius:20px;padding:36px 32px;width:100%;max-width:600px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.rack-box-wide{max-width:900px;max-height:88vh;overflow-y:auto}
+.rack-home-btns{display:flex;flex-direction:column;gap:12px;margin-top:22px}
+.rack-home-btn{padding:18px 22px;border-radius:16px;border:none;font-size:15px;font-weight:700;cursor:pointer;text-align:left;display:flex;align-items:center;gap:16px;transition:all .15s;width:100%}
+.rack-home-btn:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,.14)}
+.rack-back{background:none;border:none;color:rgba(255,255,255,.55);cursor:pointer;margin-top:14px;font-size:12px;letter-spacing:.3px}
+.rack-back:hover{color:#fff}
+.rack-find-result{background:#f0fdf4;border:1px solid #86efac;border-radius:12px;padding:14px;margin-bottom:16px;font-size:13px}
+
+/* CODE MODAL */
+#codeModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:400;align-items:center;justify-content:center;padding:20px}
+#codeModal.open{display:flex}
+.code-box{background:#fff;border-radius:20px;padding:36px 28px;text-align:center;max-width:400px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.big-code{font-size:38px;font-weight:900;letter-spacing:6px;color:var(--primary);font-family:monospace;margin:14px 0;background:var(--soft);padding:14px 18px;border-radius:14px;border:2px dashed var(--border)}
+
+/* @MENCIONES */
+.mention-wrap{position:relative}
+.mentions-dropdown{position:absolute;bottom:calc(100% + 4px);left:0;background:#fff;border:1.5px solid var(--border);border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.14);z-index:999;min-width:230px;max-height:200px;overflow-y:auto;display:none}
+.mention-item{padding:9px 14px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:10px;transition:background .1s}
+.mention-item:hover{background:var(--soft)}
+.mention-chip{display:inline-flex;align-items:center;background:#dbeafe;color:#1e40af;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:700;margin:0 2px}
+.nota-item{border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px;font-size:13px}
+
+/* RACK CODE BADGE in modal */
+.rack-code-banner{background:#f0fdf4;border:1px solid #86efac;border-radius:12px;padding:14px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
 </style>
 </head>
 <body>
@@ -237,7 +266,18 @@ select:focus,input:focus{border-color:var(--primary)}
     <button class="btn-primary" onclick="doLogin()">Ingresar</button>
     <div class="auth-err" id="authErr"></div>
     <div style="text-align:center;margin-top:14px;font-size:12px;color:var(--muted)">¿Nuevo usuario? Contacta al administrador.</div>
+    <div style="margin-top:18px;border-top:1px solid var(--border);padding-top:16px">
+      <button onclick="enterRackMode()" style="width:100%;padding:11px;background:var(--soft);border:1.5px solid var(--border);border-radius:12px;font-size:14px;font-weight:700;color:var(--primary);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .15s">
+        🔧 Acceso Rack / Sin cuenta
+      </button>
+      <div style="text-align:center;margin-top:8px;font-size:11px;color:var(--muted)">Para operadores de rack sin correo corporativo</div>
+    </div>
   </div>
+</div>
+
+<!-- RACK SCREEN -->
+<div id="rackScreen">
+  <div id="rackContent" style="width:100%;max-width:680px"></div>
 </div>
 
 <!-- APP -->
@@ -309,6 +349,11 @@ select:focus,input:focus{border-color:var(--primary)}
     <div class="modal-body" id="auditModalBody"></div>
     <div class="modal-footer" id="auditModalFooter"></div>
   </div>
+</div>
+
+<!-- CODE SUCCESS MODAL -->
+<div id="codeModal">
+  <div id="codeModalContent" style="width:100%;max-width:400px"></div>
 </div>
 
 <!-- TOAST -->
@@ -387,20 +432,31 @@ function getAreaColorLabel(pct){ return pct>=80?'✅ Cumple':pct>=50?'⚠️ Reg
 let currentUser=null, currentUserData=null;
 let audits=[], users=[], notifications=[];
 let unsubListeners=[];
+let isGuestMode=false;
+let pendingMentions=[];
+const rackSolveFiles={};
 
 // ═══════════════════════════════════════
 // AUTH
 // ═══════════════════════════════════════
 auth.onAuthStateChanged(async user=>{
+  if(user&&user.isAnonymous) return; // transacción guest — no cambiar pantalla
+  if(!user&&isGuestMode) return;     // sign-out guest — quedarse en rack mode
   if(user){
     currentUser=user;
     await loadUserData(user.uid);
     initApp();
   } else {
     currentUser=null; currentUserData=null;
-    document.getElementById('authScreen').style.display='flex';
-    document.getElementById('app').style.display='none';
-    unsubAll();
+    // Auto-entrar rack mode si URL lo solicita y no hay sesión
+    const params=new URLSearchParams(window.location.search);
+    if(params.get('auditor')==='1'){
+      enterRackMode();
+    } else {
+      document.getElementById('authScreen').style.display='flex';
+      document.getElementById('app').style.display='none';
+      unsubAll();
+    }
   }
 });
 
@@ -493,27 +549,52 @@ function navigateTo(page){
 function subscribeData(){
   unsubAll();
   const role=currentUserData.role;
-  let q=db.collection('audits').orderBy('createdAt','desc');
-  if(role==='supervisor') q=q.where('supervisorId','==',currentUser.uid);
-  if(role==='operador') q=q.where('auditorId','==',currentUser.uid);
 
-  const u1=q.onSnapshot(snap=>{
-    audits=snap.docs.map(d=>({id:d.id,...d.data()}));
-    checkSLAStatus();
-    renderKanban(); renderDashboard();
-    updateNavBadge();
-  });
-  unsubListeners.push(u1);
+  if(role==='supervisor'){
+    // Dos listeners: auditorías propias + auditorías colaboradoras por @mención
+    let primaryAudits=[], collabAudits=[];
+    const merge=()=>{
+      const seen=new Set();
+      audits=[];
+      [...primaryAudits,...collabAudits].forEach(a=>{if(!seen.has(a.id)){seen.add(a.id);audits.push(a);}});
+      audits.sort((a,b)=>{
+        const ta=a.createdAt?.toDate?.()||new Date(0);
+        const tb=b.createdAt?.toDate?.()||new Date(0);
+        return tb-ta;
+      });
+      checkSLAStatus();renderKanban();renderDashboard();updateNavBadge();
+    };
+    unsubListeners.push(
+      db.collection('audits').where('supervisorId','==',currentUser.uid)
+        .orderBy('createdAt','desc').onSnapshot(snap=>{
+          primaryAudits=snap.docs.map(d=>({id:d.id,...d.data()}));merge();
+        })
+    );
+    unsubListeners.push(
+      db.collection('audits').where('collaborators','array-contains',currentUser.uid)
+        .onSnapshot(snap=>{
+          collabAudits=snap.docs.map(d=>({id:d.id,...d.data()}));merge();
+        })
+    );
+  } else {
+    let q=db.collection('audits').orderBy('createdAt','desc');
+    if(role==='operador') q=q.where('auditorId','==',currentUser.uid);
+    unsubListeners.push(q.onSnapshot(snap=>{
+      audits=snap.docs.map(d=>({id:d.id,...d.data()}));
+      checkSLAStatus();renderKanban();renderDashboard();updateNavBadge();
+    }));
+  }
 
-  const u2=db.collection('notifications').where('recipientId','==',currentUser.uid)
-    .orderBy('createdAt','desc').limit(30).onSnapshot(snap=>{
-      notifications=snap.docs.map(d=>({id:d.id,...d.data()}));
-      renderNotifications();
-    });
-  unsubListeners.push(u2);
+  unsubListeners.push(
+    db.collection('notifications').where('recipientId','==',currentUser.uid)
+      .orderBy('createdAt','desc').limit(30).onSnapshot(snap=>{
+        notifications=snap.docs.map(d=>({id:d.id,...d.data()}));
+        renderNotifications();
+      })
+  );
 
   if(role!=='operador'){
-    db.collection('users').get().then(snap=>{ users=snap.docs.map(d=>({id:d.id,...d.data()})); });
+    db.collection('users').get().then(snap=>{users=snap.docs.map(d=>({id:d.id,...d.data()}));});
   }
 }
 
@@ -613,7 +694,7 @@ function renderKanban(){
         return new Date(created.getTime()+Number(s)*3600000)<new Date();
       });
       return `<div class="kanban-card${a.status==='late'?' late-card':''}" onclick="openAuditModal('${a.id}')">
-        <div class="kc-id">#${a.id.substring(0,8).toUpperCase()}</div>
+        <div class="kc-id">#${a.id.substring(0,8).toUpperCase()}${a.guestAudit?'&nbsp;<span style="background:#f3e8ff;color:#6b21a8;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px">👤 Rack</span>':''}</div>
         <div class="kc-area">📍 ${a.area||'—'}</div>
         <div class="kc-meta">👤 ${a.auditorName||'—'}${role!=='operador'?' · 👔 '+( a.supervisorName||'—'):''}</div>
         ${hasVencido&&a.status!=='closed'?'<span class="sla-vencido">⚡ SLA vencido</span>':''}
@@ -770,6 +851,8 @@ async function submitFormulario(){
       supervisorName:sup?.name||sup?.email||'—',
       deadline:new Date(deadline+'T23:59:59'),
       createdAt:firebase.firestore.FieldValue.serverTimestamp(),
+      collaborators:[],
+      notas:[],
     });
     // Upload evidence
     for(const [key,files] of Object.entries(evidenceFiles)){
@@ -809,9 +892,21 @@ async function openAuditModal(auditId){
   document.getElementById('auditModalMeta').textContent=`👤 ${audit.auditorName||'—'} · 👔 ${audit.supervisorName||'—'} · 📅 Límite: ${dlStr}`;
   document.getElementById('auditModalStatus').innerHTML=`<span class="pill pill-${audit.status||'pending'}">${STATUS_LABEL[audit.status]||'—'}</span>`;
 
-  const canSolve=(role==='supervisor'&&audit.supervisorId===currentUser.uid)||role==='admin';
+  const isCollaborator=role==='supervisor'&&(audit.collaborators||[]).includes(currentUser.uid);
+  const canSolve=(role==='supervisor'&&audit.supervisorId===currentUser.uid)||isCollaborator||role==='admin';
 
-  let body=`<div style="margin-bottom:16px;font-size:13px"><strong>Observaciones:</strong> ${audit.obs||'—'}</div>`;
+  let body='';
+  // Código rack visible para supervisor/admin
+  if(audit.guestAudit&&audit.auditCode&&role!=='operador'){
+    body+=`<div class="rack-code-banner">
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:2px">Código de acceso rack</div>
+        <div style="font-size:24px;font-weight:900;letter-spacing:4px;font-family:monospace;color:var(--primary)">${audit.auditCode}</div>
+      </div>
+      <button class="btn btn-sm" onclick="navigator.clipboard.writeText('${audit.auditCode}').then(()=>showToast('Código copiado','success'))">📋 Copiar código</button>
+    </div>`;
+  }
+  body+=`<div style="margin-bottom:16px;font-size:13px"><strong>Observaciones:</strong> ${audit.obs||'—'}</div>`;
   body+=CRITERIOS_5S.map((sec,si)=>{
     const yes=sec.items.filter((_,ii)=>audit.criterios?.[`s${si}_i${ii}`]==='si').length;
     const pct=Math.round(yes/sec.items.length*100);
@@ -854,6 +949,33 @@ async function openAuditModal(auditId){
         <tbody>${rows}</tbody>
       </table></div>`;
   }).join('');
+
+  // Sección de notas con @menciones (solo admin)
+  if(role==='admin'){
+    const notas=(audit.notas||[]).slice().reverse();
+    const notasHtml=notas.length
+      ?notas.map(n=>{
+          const t=n.createdAt?new Date(n.createdAt).toLocaleString('es-GT'):'—';
+          return `<div class="nota-item">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+              <strong style="font-size:13px">${n.autorName||'—'}</strong>
+              <span style="font-size:11px;color:var(--muted)">${t}</span>
+            </div>
+            <div style="font-size:13px;line-height:1.5">${renderMentionText(n.texto,n.mentions||[])}</div>
+          </div>`;
+        }).join('')
+      :'<p style="font-size:12px;color:var(--muted);margin-bottom:12px">Sin notas aún.</p>';
+    body+=`<hr class="divider">
+      <h3 style="font-size:14px;font-weight:800;margin-bottom:12px">📝 Notas del plan</h3>
+      ${notasHtml}
+      <div class="mention-wrap" style="margin-top:12px">
+        <textarea id="notaTextarea" placeholder="Escribe una nota... usa @ para mencionar usuarios" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:13px;min-height:70px;resize:vertical;outline:none" oninput="handleMentionInput(this)"></textarea>
+        <div id="mentionDropdown" class="mentions-dropdown"></div>
+      </div>
+      <div style="text-align:right;margin-top:8px">
+        <button class="btn btn-dark btn-sm" onclick="addNota('${audit.id}')">+ Agregar nota</button>
+      </div>`;
+  }
 
   document.getElementById('auditModalBody').innerHTML=body;
 
@@ -1214,6 +1336,428 @@ function showToast(msg,type=''){
   t.className='toast'+(type?' '+type:'');
   t.textContent=msg; wrap.appendChild(t);
   setTimeout(()=>t.remove(),3200);
+}
+
+// ═══════════════════════════════════════
+// RACK MODE — Acceso sin cuenta
+// ═══════════════════════════════════════
+function enterRackMode(){
+  isGuestMode=true;
+  document.getElementById('authScreen').style.display='none';
+  document.getElementById('app').style.display='none';
+  document.getElementById('rackScreen').style.display='flex';
+  showRackHome();
+  // Si URL trae código, abrir solve directamente
+  const params=new URLSearchParams(window.location.search);
+  const code=params.get('code');
+  if(code) setTimeout(()=>{ showRackSolve(); const el=document.getElementById('rCode'); if(el){el.value=code;} },80);
+}
+
+async function exitRackMode(){
+  isGuestMode=false;
+  if(auth.currentUser) await auth.signOut();
+  Object.keys(rackSolveFiles).forEach(k=>delete rackSolveFiles[k]);
+  document.getElementById('rackScreen').style.display='none';
+  document.getElementById('authScreen').style.display='flex';
+}
+
+function showRackHome(){
+  document.getElementById('rackContent').innerHTML=`
+    <div class="rack-box">
+      <div class="auth-logo">
+        <div class="auth-logo-badge">5S</div>
+        <div>
+          <div style="font-size:17px;font-weight:800;color:var(--primary)">FERCO Cerámica</div>
+          <div style="font-size:12px;color:var(--muted)">Acceso Rack — Sistema de Auditorías 5S</div>
+        </div>
+      </div>
+      <h2 style="font-size:18px;font-weight:800;margin-bottom:6px">¿Qué deseas hacer?</h2>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:4px">Selecciona la acción que necesitas realizar</p>
+      <div class="rack-home-btns">
+        <button class="rack-home-btn" style="background:var(--primary);color:#fff" onclick="showRackForm()">
+          📋
+          <div><div>Generar Auditoría</div><div style="font-size:12px;font-weight:400;opacity:.7;margin-top:2px">Registrar hallazgos en tu área de trabajo</div></div>
+        </button>
+        <button class="rack-home-btn" style="background:#f0fdf4;border:2px solid #86efac;color:#166534" onclick="showRackSolve()">
+          ✅
+          <div><div>Registrar Solución</div><div style="font-size:12px;font-weight:400;opacity:.7;margin-top:2px">Ingresar el código de tu plan de auditoría</div></div>
+        </button>
+      </div>
+    </div>
+    <button class="rack-back" onclick="exitRackMode()">← Volver al inicio de sesión</button>`;
+}
+
+function showRackForm(){
+  Object.keys(ynState).forEach(k=>delete ynState[k]);
+  Object.keys(evidenceFiles).forEach(k=>delete evidenceFiles[k]);
+  document.getElementById('rackContent').innerHTML=`
+    <div class="rack-box rack-box-wide">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+        <div>
+          <h2 style="font-size:18px;font-weight:800">Nueva Auditoría 5S</h2>
+          <p style="font-size:12px;color:var(--muted)">Completa los criterios de tu área</p>
+        </div>
+        <button class="btn btn-sm" onclick="showRackHome()">← Volver</button>
+      </div>
+      <div class="audit-header-grid">
+        <div class="form-group"><label>Tu nombre completo</label>
+          <input type="text" id="rName" placeholder="Escribe tu nombre"></div>
+        <div class="form-group"><label>Área a auditar</label>
+          <select id="rArea">${AREAS.map(a=>`<option value="${a}">${a}</option>`).join('')}</select></div>
+        <div class="form-group"><label>Fecha límite de solución</label>
+          <input type="date" id="rDeadline" min="${new Date().toISOString().split('T')[0]}"></div>
+        <div class="form-group"><label>Supervisor asignado</label>
+          <select id="rSupervisor"><option value="">Cargando...</option></select></div>
+      </div>
+      <hr class="divider">
+      ${buildCriteriosForm()}
+      <div style="text-align:right;margin-top:22px">
+        <button class="btn btn-accent" style="padding:12px 28px" onclick="submitGuestAudit()">📤 Enviar Auditoría</button>
+      </div>
+    </div>
+    <button class="rack-back" onclick="showRackHome()">← Volver</button>`;
+  loadRackSupervisors();
+}
+
+function showRackSolve(){
+  Object.keys(rackSolveFiles).forEach(k=>delete rackSolveFiles[k]);
+  document.getElementById('rackContent').innerHTML=`
+    <div class="rack-box">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+        <div>
+          <h2 style="font-size:18px;font-weight:800">Registrar Solución</h2>
+          <p style="font-size:12px;color:var(--muted)">Ingresa el código de tu plan de auditoría</p>
+        </div>
+        <button class="btn btn-sm" onclick="showRackHome()">← Volver</button>
+      </div>
+      <div class="form-group">
+        <label>Código del plan</label>
+        <input type="text" id="rCode" placeholder="Ej: 5S-A7K3" style="text-transform:uppercase;letter-spacing:3px;font-size:20px;font-weight:800;text-align:center" oninput="this.value=this.value.toUpperCase()">
+      </div>
+      <div class="form-group">
+        <label>Tu nombre completo</label>
+        <input type="text" id="rSolveName" placeholder="Escribe tu nombre">
+      </div>
+      <button class="btn btn-dark" style="width:100%;padding:13px;font-size:14px" onclick="lookupByCode()">🔍 Buscar plan</button>
+      <div id="rSolveResult" style="margin-top:20px"></div>
+    </div>
+    <button class="rack-back" onclick="showRackHome()">← Volver</button>`;
+}
+
+async function loadRackSupervisors(){
+  const snap=await db.collection('users').where('role','==','supervisor').get();
+  const sel=document.getElementById('rSupervisor');
+  if(!sel) return;
+  const list=snap.docs.map(d=>({id:d.id,...d.data()}));
+  sel.innerHTML=list.length
+    ?list.map(u=>`<option value="${u.id}">${u.name||u.email}</option>`).join('')
+    :'<option value="">Sin supervisores disponibles</option>';
+}
+
+async function submitGuestAudit(){
+  const name=document.getElementById('rName')?.value.trim();
+  const area=document.getElementById('rArea')?.value;
+  const deadline=document.getElementById('rDeadline')?.value;
+  const supervisorId=document.getElementById('rSupervisor')?.value;
+  if(!name){showToast('Escribe tu nombre','error');return;}
+  if(!deadline){showToast('Selecciona una fecha límite','error');return;}
+  if(!supervisorId){showToast('Selecciona un supervisor','error');return;}
+
+  let anonUid;
+  try{
+    const cred=await auth.signInAnonymously();
+    anonUid=cred.user.uid;
+  }catch(e){showToast('Error de conexión: '+e.message,'error');return;}
+
+  const supSnap=await db.collection('users').doc(supervisorId).get();
+  const sup=supSnap.exists?supSnap.data():{};
+
+  const criterios={},hallazgos={},hallazgoSLA={};
+  CRITERIOS_5S.forEach((sec,si)=>sec.items.forEach((_,ii)=>{
+    const key=`s${si}_i${ii}`;
+    criterios[key]=ynState[key]||null;
+    hallazgos[key]=document.getElementById(`hallazgo-${si}-${ii}`)?.value||'';
+    const slaVal=document.getElementById(`sla-${si}-${ii}`)?.value||'';
+    if(slaVal) hallazgoSLA[key]=Number(slaVal);
+  }));
+
+  const auditCode=generateAuditCode();
+  showToast('Guardando auditoría...','');
+  try{
+    const docRef=await db.collection('audits').add({
+      area,obs:'',criterios,hallazgos,hallazgoSLA,
+      status:'pending',
+      auditorId:anonUid,
+      auditorName:name,
+      supervisorId,
+      supervisorName:sup.name||sup.email||'—',
+      deadline:new Date(deadline+'T23:59:59'),
+      createdAt:firebase.firestore.FieldValue.serverTimestamp(),
+      guestAudit:true,
+      guestAuditorName:name,
+      auditCode,
+      collaborators:[],
+      notas:[],
+    });
+    for(const [key,files] of Object.entries(evidenceFiles)){
+      for(const file of files){
+        const path=`audits/${docRef.id}/auditor/${key}_${Date.now()}_${file.name}`;
+        const snap2=await storage.ref(path).put(file);
+        const url=await snap2.ref.getDownloadURL();
+        await db.collection('audits').doc(docRef.id).update({[`evidencias_auditor.${key}`]:firebase.firestore.FieldValue.arrayUnion(url)});
+      }
+    }
+    await db.collection('notifications').add({
+      recipientId:supervisorId,
+      title:'Nueva auditoría asignada (Rack)',
+      body:`${name} registró una auditoría 5S — ${area} · Código: ${auditCode}`,
+      auditId:docRef.id,type:'assignment',read:false,
+      createdAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+    await auth.signOut();
+    showCodeModal(auditCode,docRef.id);
+    Object.keys(ynState).forEach(k=>delete ynState[k]);
+    Object.keys(evidenceFiles).forEach(k=>delete evidenceFiles[k]);
+  }catch(e){
+    showToast('Error: '+e.message,'error');
+    try{await auth.signOut();}catch(_){}
+  }
+}
+
+async function lookupByCode(){
+  const code=document.getElementById('rCode')?.value.trim().toUpperCase();
+  const name=document.getElementById('rSolveName')?.value.trim();
+  if(!code){showToast('Ingresa el código','error');return;}
+  if(!name){showToast('Ingresa tu nombre','error');return;}
+  document.getElementById('rSolveResult').innerHTML='<div class="spinner"></div>';
+  try{
+    if(!auth.currentUser) await auth.signInAnonymously();
+    const snap=await db.collection('audits').where('auditCode','==',code).limit(1).get();
+    if(snap.empty){
+      document.getElementById('rSolveResult').innerHTML=`<div style="background:var(--redbg);color:var(--red);border-radius:12px;padding:14px;font-size:13px;text-align:center">❌ Código no encontrado. Verifica que esté escrito correctamente.</div>`;
+      return;
+    }
+    const doc=snap.docs[0];
+    const audit={id:doc.id,...doc.data()};
+    if(audit.status==='closed'){
+      document.getElementById('rSolveResult').innerHTML=`<div style="background:var(--greenbg);color:var(--green);border-radius:12px;padding:14px;font-size:13px;text-align:center">✅ Esta auditoría ya está cerrada. No requiere más acciones.</div>`;
+      return;
+    }
+    renderSolveForm(audit,name);
+  }catch(e){
+    document.getElementById('rSolveResult').innerHTML=`<div style="color:var(--red);font-size:13px">Error: ${e.message}</div>`;
+  }
+}
+
+function renderSolveForm(audit,name){
+  window._rackSolveAudit=audit;
+  const hasNo=Object.values(audit.criterios||{}).some(v=>v==='no');
+  const rows=CRITERIOS_5S.map((sec,si)=>sec.items.map((item,ii)=>{
+    const key=`s${si}_i${ii}`;
+    if(audit.criterios?.[key]!=='no') return '';
+    const hallazgo=audit.hallazgos?.[key]||'—';
+    const solucion=audit.soluciones?.[key]||'';
+    const evA=audit.evidencias_auditor?.[key]||[];
+    return `<div style="border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px">
+      <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-bottom:4px">${sec.s} — Criterio ${ii+1}</div>
+      <div style="font-size:13px;font-weight:700;margin-bottom:8px">${item}</div>
+      <div style="font-size:12px;color:var(--muted);padding:8px;background:var(--soft);border-radius:8px;margin-bottom:8px">📋 Hallazgo: ${hallazgo}</div>
+      ${evA.map(u=>`<img src="${u}" style="width:48px;height:48px;object-fit:cover;border-radius:6px;margin:2px;cursor:pointer" onclick="window.open('${u}','_blank')">`).join('')}
+      <div class="form-group" style="margin-top:8px;margin-bottom:8px">
+        <label>Tu solución</label>
+        <textarea id="rsol-${si}-${ii}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#f0fdf4;min-height:60px;outline:none">${solucion}</textarea>
+      </div>
+      <label class="evidencia-label" for="rsev-${si}-${ii}">📷 Evidencia (opcional)</label>
+      <input type="file" id="rsev-${si}-${ii}" style="display:none" accept="image/*" multiple onchange="previewRackSolveEv(${si},${ii},this)">
+      <div class="evidencia-thumbs" id="rsthumbs-${si}-${ii}"></div>
+    </div>`;
+  }).join('')).join('');
+
+  document.getElementById('rSolveResult').innerHTML=`
+    <div class="rack-find-result">
+      ✅ Plan encontrado — <strong>${audit.area}</strong><br>
+      <span style="font-size:11px;color:var(--muted)">Auditado por: ${audit.guestAuditorName||audit.auditorName||'—'}</span>
+    </div>
+    ${!hasNo?'<div class="empty-state">No hay hallazgos pendientes de solución en este plan.</div>':rows}
+    ${hasNo?`<div style="text-align:right;margin-top:16px">
+      <button class="btn btn-success" style="padding:12px 24px" onclick="submitGuestSolution('${audit.id}','${name.replace(/'/g,"\\'")}')">✅ Guardar solución</button>
+    </div>`:''}`;
+}
+
+async function submitGuestSolution(auditId,solveName){
+  const audit=window._rackSolveAudit;
+  const soluciones={};
+  CRITERIOS_5S.forEach((sec,si)=>sec.items.forEach((_,ii)=>{
+    const key=`s${si}_i${ii}`;
+    const el=document.getElementById(`rsol-${si}-${ii}`);
+    if(el) soluciones[key]=el.value||'';
+  }));
+  showToast('Guardando solución...','');
+  try{
+    for(const [key,files] of Object.entries(rackSolveFiles)){
+      for(const file of files){
+        const path=`audits/${auditId}/supervisor/${key}_${Date.now()}_${file.name}`;
+        const snap2=await storage.ref(path).put(file);
+        const url=await snap2.ref.getDownloadURL();
+        await db.collection('audits').doc(auditId).update({[`evidencias_supervisor.${key}`]:firebase.firestore.FieldValue.arrayUnion(url)});
+      }
+    }
+    await db.collection('audits').doc(auditId).update({
+      soluciones,status:'inprog',
+      updatedAt:firebase.firestore.FieldValue.serverTimestamp(),
+      lastSolvedBy:solveName
+    });
+    if(audit?.supervisorId){
+      await db.collection('notifications').add({
+        recipientId:audit.supervisorId,
+        title:'Solución registrada (Rack)',
+        body:`${solveName} registró una solución — ${audit.area||''} · Código: ${audit.auditCode||''}`,
+        auditId,type:'update',read:false,
+        createdAt:firebase.firestore.FieldValue.serverTimestamp()
+      });
+    }
+    await auth.signOut();
+    Object.keys(rackSolveFiles).forEach(k=>delete rackSolveFiles[k]);
+    showToast('✅ Solución guardada correctamente','success');
+    setTimeout(()=>showRackHome(),1800);
+  }catch(e){showToast('Error: '+e.message,'error');}
+}
+
+function previewRackSolveEv(si,ii,input){
+  const key=`s${si}_i${ii}`;
+  if(!rackSolveFiles[key]) rackSolveFiles[key]=[];
+  Array.from(input.files).forEach(f=>rackSolveFiles[key].push(f));
+  const thumbs=document.getElementById(`rsthumbs-${si}-${ii}`);
+  if(!thumbs) return;
+  rackSolveFiles[key].forEach(f=>{
+    const img=document.createElement('img');
+    img.src=URL.createObjectURL(f);
+    img.style.cssText='width:42px;height:42px;object-fit:cover;border-radius:6px;border:1px solid var(--border);margin:2px';
+    thumbs.appendChild(img);
+  });
+}
+
+function generateAuditCode(){
+  return '5S-'+Math.random().toString(36).substr(2,4).toUpperCase();
+}
+
+function showCodeModal(code){
+  const url=`${location.origin}${location.pathname}?auditor=1&code=${code}`;
+  document.getElementById('codeModal').classList.add('open');
+  document.getElementById('codeModalContent').innerHTML=`
+    <div class="code-box">
+      <div style="font-size:40px;margin-bottom:8px">🎉</div>
+      <h2 style="font-size:19px;font-weight:800;margin-bottom:4px">¡Auditoría registrada!</h2>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Guarda este código para registrar la solución más adelante</p>
+      <div class="big-code">${code}</div>
+      <div id="qrContainer" style="margin:16px auto;width:160px;height:160px;display:flex;align-items:center;justify-content:center"></div>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:12px">
+        <button class="btn btn-dark btn-sm" onclick="copyCode('${code}')">📋 Copiar código</button>
+        <button class="btn btn-accent btn-sm" onclick="downloadQR()">⬇️ Descargar QR</button>
+      </div>
+      <button class="btn btn-sm" style="width:100%;margin-top:14px" onclick="closeCodeModal()">Listo</button>
+    </div>`;
+  try{
+    new QRCode(document.getElementById('qrContainer'),{
+      text:url,width:160,height:160,colorDark:'#101820',colorLight:'#ffffff'
+    });
+  }catch(e){}
+}
+
+function copyCode(code){
+  navigator.clipboard.writeText(code).then(()=>showToast('Código copiado','success')).catch(()=>showToast(code,''));
+}
+
+function downloadQR(){
+  const canvas=document.querySelector('#qrContainer canvas');
+  const img=document.querySelector('#qrContainer img');
+  const link=document.createElement('a');
+  link.download='qr-auditoria-5s.png';
+  if(canvas) link.href=canvas.toDataURL();
+  else if(img) link.href=img.src;
+  else return;
+  link.click();
+}
+
+function closeCodeModal(){
+  document.getElementById('codeModal').classList.remove('open');
+  showRackHome();
+}
+
+// ═══════════════════════════════════════
+// @MENCIONES
+// ═══════════════════════════════════════
+function renderMentionText(texto,mentions){
+  let result=texto.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  (mentions||[]).forEach(m=>{
+    const safe=m.name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    result=result.replace(new RegExp('@'+safe,'g'),`<span class="mention-chip">@${m.name}</span>`);
+  });
+  return result;
+}
+
+function handleMentionInput(textarea){
+  const val=textarea.value;
+  const cursor=textarea.selectionStart;
+  const before=val.substring(0,cursor);
+  const atIndex=before.lastIndexOf('@');
+  const dropdown=document.getElementById('mentionDropdown');
+  if(!dropdown) return;
+  if(atIndex===-1||(atIndex>0&&/\S/.test(before[atIndex-1]))){
+    dropdown.style.display='none';return;
+  }
+  const query=before.substring(atIndex+1).toLowerCase();
+  const matches=users.filter(u=>(u.name||u.email).toLowerCase().includes(query)&&u.id!==currentUser?.uid);
+  if(!matches.length){dropdown.style.display='none';return;}
+  dropdown.innerHTML=matches.slice(0,8).map(u=>`
+    <div class="mention-item" onmousedown="insertMention('${u.id}','${(u.name||u.email).replace(/'/g,"\\'")}')">
+      <div class="avatar" style="width:26px;height:26px;font-size:10px;flex-shrink:0">${(u.name||u.email).substring(0,2).toUpperCase()}</div>
+      <div><div style="font-weight:700">${u.name||u.email}</div><div style="font-size:11px;color:var(--muted)">${ROLES_LABEL[u.role]||u.role}</div></div>
+    </div>`).join('');
+  dropdown.dataset.atIndex=atIndex;
+  dropdown.style.display='block';
+}
+
+function insertMention(uid,name){
+  const textarea=document.getElementById('notaTextarea');
+  const dropdown=document.getElementById('mentionDropdown');
+  if(!textarea||!dropdown) return;
+  const atIndex=parseInt(dropdown.dataset.atIndex)||0;
+  const after=textarea.value.substring(textarea.selectionStart);
+  textarea.value=textarea.value.substring(0,atIndex)+'@'+name+' '+after;
+  if(!pendingMentions.find(m=>m.uid===uid)) pendingMentions.push({uid,name});
+  dropdown.style.display='none';
+  textarea.focus();
+}
+
+async function addNota(auditId){
+  const textarea=document.getElementById('notaTextarea');
+  if(!textarea) return;
+  const texto=textarea.value.trim();
+  if(!texto){showToast('Escribe una nota','error');return;}
+  const nota={
+    texto,
+    mentions:pendingMentions.slice(),
+    autorId:currentUser.uid,
+    autorName:currentUserData.name||currentUserData.email,
+    createdAt:new Date().toISOString()
+  };
+  const newCollabs=pendingMentions.filter(m=>m.uid!==currentAudit?.supervisorId).map(m=>m.uid);
+  const updateData={notas:firebase.firestore.FieldValue.arrayUnion(nota)};
+  if(newCollabs.length) updateData.collaborators=firebase.firestore.FieldValue.arrayUnion(...newCollabs);
+  try{
+    await db.collection('audits').doc(auditId).update(updateData);
+    for(const m of pendingMentions){
+      await createNotif(m.uid,{
+        title:`${currentUserData.name||'Admin'} te mencionó en un plan`,
+        body:`Auditoría ${currentAudit?.area||''}: "${texto.substring(0,70)}${texto.length>70?'...':''}"`,
+        auditId,type:'mention'
+      });
+    }
+    pendingMentions=[];
+    showToast('✅ Nota agregada','success');
+    openAuditModal(auditId);
+  }catch(e){showToast('Error: '+e.message,'error');}
 }
 
 document.getElementById('authPass')?.addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
