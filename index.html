@@ -1374,16 +1374,24 @@ function showToast(msg,type=''){
 // ═══════════════════════════════════════
 // RACK MODE — Acceso sin cuenta
 // ═══════════════════════════════════════
-function enterRackMode(){
+async function enterRackMode(){
   isGuestMode=true;
   document.getElementById('authScreen').style.display='none';
   document.getElementById('app').style.display='none';
   document.getElementById('rackScreen').style.display='flex';
+  // Autenticar anónimamente para que Firestore acepte las consultas (ej: cargar supervisores)
+  if(!auth.currentUser){ try{ await auth.signInAnonymously(); }catch(e){} }
   showRackHome();
-  // Si URL trae código, abrir solve directamente
   const params=new URLSearchParams(window.location.search);
   const code=params.get('code');
   if(code) setTimeout(()=>{ showRackSolve(); const el=document.getElementById('rCode'); if(el){el.value=code;} },80);
+}
+
+function resetRackScreen(){
+  const rs=document.getElementById('rackScreen');
+  rs.style.background=''; rs.style.alignItems=''; rs.style.justifyContent=''; rs.style.padding='';
+  const rc=document.getElementById('rackContent');
+  rc.style.maxWidth=''; rc.style.width='';
 }
 
 async function exitRackMode(){
@@ -1395,6 +1403,7 @@ async function exitRackMode(){
 }
 
 function showRackHome(){
+  resetRackScreen();
   document.getElementById('rackContent').innerHTML=`
     <div class="rack-box">
       <div class="auth-logo">
@@ -1423,41 +1432,52 @@ function showRackHome(){
 function showRackForm(){
   Object.keys(ynState).forEach(k=>delete ynState[k]);
   Object.keys(evidenceFiles).forEach(k=>delete evidenceFiles[k]);
-  document.getElementById('rackContent').innerHTML=`
-    <div class="rack-box rack-box-wide">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+  // Cambiar a layout de pantalla completa
+  const rs=document.getElementById('rackScreen');
+  rs.style.background='var(--bg)'; rs.style.alignItems='flex-start';
+  rs.style.justifyContent='flex-start'; rs.style.padding='0';
+  const rc=document.getElementById('rackContent');
+  rc.style.maxWidth='100%'; rc.style.width='100%';
+
+  rc.innerHTML=`
+    <div style="background:var(--primary);color:#fff;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="background:var(--accent);color:var(--primary);font-size:13px;font-weight:900;padding:5px 10px;border-radius:8px;letter-spacing:1px">5S</div>
         <div>
-          <h2 style="font-size:18px;font-weight:800">Nueva Auditoría 5S</h2>
-          <p style="font-size:12px;color:var(--muted)">Completa los criterios de tu área</p>
+          <div style="font-size:15px;font-weight:800">Nueva Auditoría 5S</div>
+          <div style="font-size:11px;opacity:.55">Acceso Rack — Sin cuenta</div>
         </div>
-        <button class="btn btn-sm" onclick="showRackHome()">← Volver</button>
       </div>
-      <div class="audit-header-grid">
-        <div class="form-group"><label>Tu nombre completo</label>
-          <input type="text" id="rName" placeholder="Escribe tu nombre"></div>
-        <div class="form-group"><label>Área a auditar</label>
-          <select id="rArea">${AREAS.map(a=>`<option value="${a}">${a}</option>`).join('')}</select></div>
-        <div class="form-group"><label>Duración de la auditoría</label>
-          <select id="rDuration">
-            <option value="24">⚡ 24 horas</option>
-            <option value="48" selected>🕐 48 horas</option>
-            <option value="72">📅 72 horas</option>
-            <option value="168">📆 1 semana</option>
-          </select></div>
-        <div class="form-group"><label>Supervisor asignado</label>
-          <select id="rSupervisor"><option value="">Cargando...</option></select></div>
-      </div>
-      <hr class="divider">
-      ${buildCriteriosForm()}
-      <div style="text-align:right;margin-top:22px">
-        <button class="btn btn-accent" style="padding:12px 28px" onclick="submitGuestAudit()">📤 Enviar Auditoría</button>
-      </div>
+      <button class="btn btn-sm" onclick="showRackHome()" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);color:#fff">← Volver</button>
     </div>
-    <button class="rack-back" onclick="showRackHome()">← Volver</button>`;
+    <div style="padding:24px;max-width:1200px;margin:0 auto">
+      <div class="card" style="margin-bottom:16px">
+        <div class="audit-header-grid">
+          <div class="form-group"><label>Tu nombre completo</label>
+            <input type="text" id="rName" placeholder="Escribe tu nombre"></div>
+          <div class="form-group"><label>Área a auditar</label>
+            <select id="rArea">${AREAS.map(a=>`<option value="${a}">${a}</option>`).join('')}</select></div>
+          <div class="form-group"><label>Duración de la auditoría</label>
+            <select id="rDuration">
+              <option value="24">⚡ 24 horas</option>
+              <option value="48" selected>🕐 48 horas</option>
+              <option value="72">📅 72 horas</option>
+              <option value="168">📆 1 semana</option>
+            </select></div>
+          <div class="form-group"><label>Supervisor asignado</label>
+            <select id="rSupervisor"><option value="">Cargando...</option></select></div>
+        </div>
+      </div>
+      ${buildCriteriosForm()}
+      <div style="text-align:right;margin-top:22px;margin-bottom:40px">
+        <button class="btn btn-accent" style="padding:13px 32px;font-size:15px" onclick="submitGuestAudit()">📤 Enviar Auditoría</button>
+      </div>
+    </div>`;
   loadRackSupervisors();
 }
 
 function showRackSolve(){
+  resetRackScreen();
   Object.keys(rackSolveFiles).forEach(k=>delete rackSolveFiles[k]);
   document.getElementById('rackContent').innerHTML=`
     <div class="rack-box">
