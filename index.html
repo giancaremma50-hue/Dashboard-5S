@@ -297,6 +297,14 @@ select:focus,input:focus{border-color:var(--primary)}
 .cal-cell:hover{transform:scale(1.15);z-index:2;position:relative}
 @keyframes fadeInUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
 @keyframes popIn{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}
+/* Loading overlay glassmorphism */
+#loadingOverlay{position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,.45);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+#loadingOverlay .glass-card{background:rgba(255,255,255,.12);border:1.5px solid rgba(255,255,255,.25);border-radius:22px;padding:36px 52px;display:flex;flex-direction:column;align-items:center;gap:18px;box-shadow:0 8px 40px rgba(0,0,0,.3);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);animation:popIn .35s cubic-bezier(.34,1.56,.64,1)}
+#loadingOverlay .gl-spinner{width:40px;height:40px;border:3px solid rgba(255,255,255,.25);border-top-color:#fff;border-radius:50%;animation:spin .75s linear infinite}
+#loadingOverlay .gl-text{font-size:15px;font-weight:800;color:#fff;letter-spacing:.2px;text-shadow:0 1px 6px rgba(0,0,0,.4)}
+/* Month group cards in Kanban closed column */
+.month-group-card{background:var(--soft);border:1.5px solid var(--border);border-radius:12px;padding:13px 16px;margin-bottom:8px;cursor:pointer;user-select:none;transition:background .15s,border-color .15s}
+.month-group-card:hover{background:var(--border);border-color:var(--muted)}
 .page.active>.card,.page.active>.kpi-grid,.page.active .dash-cedi-card,.page.active .dash-grid,.page.active #dashCalendar{animation:fadeInUp .3s ease both}
 .modal-overlay.open .modal{animation:popIn .22s cubic-bezier(.34,1.56,.64,1) both}
 .toast{animation:fadeInUp .25s ease both}
@@ -790,43 +798,81 @@ function renderKanban(){
   const areaFilter=document.getElementById('kAreaFilter')?.value||'';
   if(areaFilter) filtered=filtered.filter(a=>a.area===areaFilter);
 
+  const makeCard=(a)=>{
+    const score=calcAuditScore(a);
+    const resultado=score.overall!==null?score.overall:null;
+    const pbcls=resultado===null?'pb-gray':resultado>=80?'pb-green':resultado>=50?'pb-yellow':'pb-red';
+    const dl=a.deadline?(a.deadline.toDate?a.deadline.toDate():new Date(a.deadline)):null;
+    const dlStr=dl?dl.toLocaleDateString('es-GT'):'—';
+    const solverLine=a.lastSolvedBy?`<div>✅ Solucionado por: <strong>${a.lastSolvedBy}</strong></div>`:'';
+    const timer=a.status!=='closed'?formatTimer(a):null;
+    return `<div class="kanban-card${a.status==='late'?' late-card':''}" onclick="openAuditModal('${a.id}')">
+      <div class="kc-id">#${a.id.substring(0,8).toUpperCase()}${a.guestAudit?'&nbsp;<span style="background:#f3e8ff;color:#6b21a8;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px">👤 Rack</span>':''}</div>
+      <div class="kc-area">📍 ${a.area||'—'}</div>
+      <div class="kc-meta" style="line-height:1.8">
+        <div>📝 Creado por: <strong>${a.auditorName||'—'}</strong></div>
+        ${role!=='operador'?`<div>👔 Asignado a: <strong>${a.supervisorName||'—'}</strong></div>`:''}
+        ${solverLine}
+      </div>
+      ${timer?`<div style="font-size:10px;font-weight:700;color:${timer.color};margin:4px 0 2px;letter-spacing:.2px">${timer.label}</div>`:''}
+      <div class="progress-bar-wrap"><div class="progress-bar ${pbcls}" style="width:${resultado??0}%"></div></div>
+      <div class="kc-footer">
+        <span style="font-size:10px;color:var(--muted)">Resultado: <strong style="color:${resultado===null?'var(--muted)':resultado>=80?'#16a34a':resultado>=50?'#d97706':'#dc2626'}">${resultado!==null?resultado+'%':'Sin datos'}</strong></span>
+        <span style="font-size:10px;color:var(--muted)">📅 ${dlStr}</span>
+      </div>
+    </div>`;
+  };
+
   const board=cols.map(col=>{
     const colAudits=filtered.filter(a=>a.status===col.key);
-    const cards=colAudits.length ? colAudits.map(a=>{
-      const score=calcAuditScore(a);
-      const resultado=score.overall!==null?score.overall:null;
-      const pbcls=resultado===null?'pb-gray':resultado>=80?'pb-green':resultado>=50?'pb-yellow':'pb-red';
-      const dl=a.deadline?(a.deadline.toDate?a.deadline.toDate():new Date(a.deadline)):null;
-      const dlStr=dl?dl.toLocaleDateString('es-GT'):'—';
-      const hasVencido=a.hallazgoSLA&&Object.values(a.hallazgoSLA).some(s=>{
-        if(!s||!a.createdAt) return false;
-        const created=a.createdAt.toDate?a.createdAt.toDate():new Date(a.createdAt);
-        return new Date(created.getTime()+Number(s)*3600000)<new Date();
-      });
-      const solverLine=a.lastSolvedBy?`<div>✅ Solucionado por: <strong>${a.lastSolvedBy}</strong></div>`:'';
-      const timer=a.status!=='closed'?formatTimer(a):null;
-      return `<div class="kanban-card${a.status==='late'?' late-card':''}" onclick="openAuditModal('${a.id}')">
-        <div class="kc-id">#${a.id.substring(0,8).toUpperCase()}${a.guestAudit?'&nbsp;<span style="background:#f3e8ff;color:#6b21a8;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px">👤 Rack</span>':''}</div>
-        <div class="kc-area">📍 ${a.area||'—'}</div>
-        <div class="kc-meta" style="line-height:1.8">
-          <div>📝 Creado por: <strong>${a.auditorName||'—'}</strong></div>
-          ${role!=='operador'?`<div>👔 Asignado a: <strong>${a.supervisorName||'—'}</strong></div>`:''}
-          ${solverLine}
-        </div>
-        ${timer?`<div style="font-size:10px;font-weight:700;color:${timer.color};margin:4px 0 2px;letter-spacing:.2px">${timer.label}</div>`:''}
-        <div class="progress-bar-wrap"><div class="progress-bar ${pbcls}" style="width:${resultado??0}%"></div></div>
-        <div class="kc-footer">
-          <span style="font-size:10px;color:var(--muted)">Resultado: <strong style="color:${resultado===null?'var(--muted)':resultado>=80?'#16a34a':resultado>=50?'#d97706':'#dc2626'}">${resultado!==null?resultado+'%':'Sin datos'}</strong></span>
-          <span style="font-size:10px;color:var(--muted)">📅 ${dlStr}</span>
-        </div>
-      </div>`;
-    }).join('') : '<div class="kanban-empty">Sin auditorías</div>';
+    // Ocultar columna "Atrasada" si no hay planes atrasados
+    if(col.key==='late'&&!colAudits.length) return '';
+
+    let items='';
+    if(col.key==='closed'){
+      // Agrupar por mes, colapsado por defecto
+      if(!colAudits.length){ items='<div class="kanban-empty">Sin auditorías</div>'; }
+      else{
+        const byMonth={};
+        colAudits.forEach(a=>{
+          const d=a.closedAt?.toDate?.()??a.createdAt?.toDate?.()??new Date(0);
+          const mKey=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+          const mLabel=d.toLocaleDateString('es-GT',{month:'long',year:'numeric'});
+          if(!byMonth[mKey]) byMonth[mKey]={label:mLabel,list:[]};
+          byMonth[mKey].list.push(a);
+        });
+        items=Object.keys(byMonth).sort().reverse().map(mKey=>{
+          const {label,list}=byMonth[mKey];
+          const sorted=list.slice().sort((a,b)=>{
+            const da=a.closedAt?.toDate?.()??new Date(0);
+            const db2=b.closedAt?.toDate?.()??new Date(0);
+            return db2-da;
+          });
+          const scores=sorted.map(a=>calcAuditScore(a).overall).filter(s=>s!==null);
+          const avg=scores.length?Math.round(scores.reduce((s,v)=>s+v,0)/scores.length):null;
+          const id=`mg_${mKey.replace('-','_')}`;
+          return `<div class="month-group-card" onclick="toggleMonthGroup('${id}')">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div>
+                <div style="font-size:12px;font-weight:800;text-transform:capitalize;color:var(--primary)">${label}</div>
+                <div style="font-size:10px;color:var(--muted);margin-top:2px">${sorted.length} plan${sorted.length>1?'es':''}${avg!==null?` · ${avg}% promedio`:''}</div>
+              </div>
+              <span id="${id}-arrow" style="font-size:12px;color:var(--muted);transition:transform .2s;display:inline-block">▶</span>
+            </div>
+          </div>
+          <div id="${id}" style="display:none">${sorted.map(makeCard).join('')}</div>`;
+        }).join('');
+      }
+    } else {
+      items=colAudits.length?colAudits.map(makeCard).join(''):'<div class="kanban-empty">Sin auditorías</div>';
+    }
+
     return `<div class="kanban-col" data-col="${col.key}">
       <div class="kanban-col-header">
         <span>${col.icon} ${col.label}</span>
         <span class="col-count">${colAudits.length}</span>
       </div>
-      <div class="kanban-items">${cards}</div>
+      <div class="kanban-items">${items}</div>
     </div>`;
   }).join('');
 
@@ -1012,7 +1058,7 @@ async function submitFormulario(){
   }));
   const submitBtn=document.querySelector('[onclick="submitFormulario()"]');
   btnLoad(submitBtn,'⏳ Enviando...');
-  showToast('Guardando auditoría...','');
+  showLoadingOverlay('Guardando auditoría...');
   try{
     const docRef=await db.collection('audits').add({
       area, obs, criterios, hallazgos, hallazgoSLA,
@@ -1044,11 +1090,12 @@ async function submitFormulario(){
       body:`${currentUserData.name||currentUserData.email} te asignó una auditoría 5S — ${area}`,
       auditId:docRef.id, type:'assignment'
     });
+    hideLoadingOverlay();
     showToast('✅ Auditoría enviada correctamente','success');
     Object.keys(ynState).forEach(k=>delete ynState[k]);
     Object.keys(evidenceFiles).forEach(k=>delete evidenceFiles[k]);
-    renderFormulario(); // re-renders DOM, button destroyed — no need to reset
-  }catch(e){btnReset(submitBtn);showToast('Error: '+e.message,'error');}
+    renderFormulario();
+  }catch(e){hideLoadingOverlay();btnReset(submitBtn);showToast('Error: '+e.message,'error');}
 }
 
 // ═══════════════════════════════════════
@@ -1224,11 +1271,25 @@ async function saveProgress(){
       if((el.value||'').trim()) updates[`solucionadoPor.${key}`]=solverName;
     }
   }));
-  showToast('Guardando...','');
+  showLoadingOverlay('Estamos actualizando...');
   try{
     // 1. Guardar soluciones primero (siempre)
     await db.collection('audits').doc(currentAudit.id).update(updates);
-    // 2. Subir fotos como best-effort (un fallo no bloquea el guardado)
+    // 2. Auto-cierre si llega a 100%
+    const mergedSol={...(currentAudit.soluciones||{})};
+    Object.entries(updates).forEach(([k,v])=>{if(k.startsWith('soluciones.'))mergedSol[k.slice(10)]=v;});
+    const newScore=calcAuditScore({...currentAudit,soluciones:mergedSol});
+    let autoClosed=false;
+    if(newScore.overall===100&&currentAudit.status!=='closed'){
+      await db.collection('audits').doc(currentAudit.id).update({status:'closed',closedAt:firebase.firestore.FieldValue.serverTimestamp()});
+      await createNotif(currentAudit.supervisorId||currentAudit.auditorId,{
+        title:'🎉 Plan completado al 100%',
+        body:`La auditoría "${currentAudit.area}" fue cerrada automáticamente.`,
+        auditId:currentAudit.id,type:'closed'
+      });
+      autoClosed=true;
+    }
+    // 3. Subir fotos como best-effort
     let photoErrors=0;
     for(const [key,files] of Object.entries(supEvidenceFiles)){
       for(const file of files){
@@ -1247,8 +1308,10 @@ async function saveProgress(){
     });
     Object.keys(supEvidenceFiles).forEach(k=>delete supEvidenceFiles[k]);
     closeAuditModal();
-    showBigSuccessToast('Tu solución ha sido registrada'+(photoErrors?` (${photoErrors} foto(s) no se pudieron subir)`:''));
-  }catch(e){btnReset(saveBtn);showToast('Error: '+e.message,'error');}
+    hideLoadingOverlay();
+    const photoNote=photoErrors?` (${photoErrors} foto(s) no se pudieron subir)`:'';
+    showBigSuccessToast(autoClosed?`🎉 Plan completado al 100% — cerrado automáticamente${photoNote}`:`Tu solución ha sido registrada${photoNote}`);
+  }catch(e){hideLoadingOverlay();btnReset(saveBtn);showToast('Error: '+e.message,'error');}
 }
 
 async function closeAuditAction(){
@@ -1667,6 +1730,33 @@ function toggleNotifPanel(){
 // ═══════════════════════════════════════
 // UTILS
 // ═══════════════════════════════════════
+// ── Loading overlay (glassmorphism) ──
+let _loadingOverlay=null;
+function showLoadingOverlay(msg='Estamos actualizando...'){
+  if(_loadingOverlay) return;
+  const el=document.createElement('div');
+  el.id='loadingOverlay';
+  el.innerHTML=`<div class="glass-card"><div class="gl-spinner"></div><div class="gl-text">${msg}</div></div>`;
+  document.body.appendChild(el);
+  _loadingOverlay=el;
+}
+function hideLoadingOverlay(){
+  if(!_loadingOverlay) return;
+  _loadingOverlay.style.transition='opacity .25s';
+  _loadingOverlay.style.opacity='0';
+  setTimeout(()=>{_loadingOverlay?.remove();_loadingOverlay=null;},260);
+}
+
+// ── Kanban month group toggle ──
+function toggleMonthGroup(id){
+  const el=document.getElementById(id);
+  const icon=document.getElementById(id+'-arrow');
+  if(!el) return;
+  const open=el.style.display!=='none';
+  el.style.display=open?'none':'block';
+  if(icon) icon.style.transform=open?'':'rotate(90deg)';
+}
+
 // Upload helper: cancela si no termina en `ms` milisegundos (default 15s)
 function uploadFileWithTimeout(storageRef,file,ms=15000){
   return new Promise((resolve,reject)=>{
@@ -1883,7 +1973,7 @@ async function submitGuestAudit(){
   const auditCode=generateAuditCode();
   const guestBtn=document.querySelector('[onclick="submitGuestAudit()"]');
   btnLoad(guestBtn,'⏳ Enviando...');
-  showToast('Guardando auditoría...','');
+  showLoadingOverlay('Guardando auditoría...');
   try{
     const docRef=await db.collection('audits').add({
       area,obs:'',criterios,hallazgos,hallazgoSLA,
@@ -1919,11 +2009,12 @@ async function submitGuestAudit(){
       createdAt:firebase.firestore.FieldValue.serverTimestamp()
     });
     await auth.signOut();
+    hideLoadingOverlay();
     showCodeModal(auditCode,docRef.id);
     Object.keys(ynState).forEach(k=>delete ynState[k]);
     Object.keys(evidenceFiles).forEach(k=>delete evidenceFiles[k]);
   }catch(e){
-    btnReset(guestBtn);
+    hideLoadingOverlay();btnReset(guestBtn);
     showToast('Error: '+e.message,'error');
     try{await auth.signOut();}catch(_){}
   }
@@ -2017,11 +2108,27 @@ async function submitGuestSolution(auditId,solveName){
       updates[`solucionadoPor.${key}`]=solveName;
     }
   }));
-  showToast('Guardando solución...','');
+  showLoadingOverlay('Estamos actualizando...');
   try{
     // 1. Guardar soluciones primero (siempre)
     await db.collection('audits').doc(auditId).update(updates);
-    // 2. Subir fotos como best-effort
+    // 2. Auto-cierre si llega a 100%
+    const mergedSol={...(audit.soluciones||{})};
+    Object.entries(updates).forEach(([k,v])=>{if(k.startsWith('soluciones.'))mergedSol[k.slice(10)]=v;});
+    const newScore=calcAuditScore({...audit,soluciones:mergedSol});
+    if(newScore.overall===100&&audit.status!=='closed'){
+      await db.collection('audits').doc(auditId).update({status:'closed',closedAt:firebase.firestore.FieldValue.serverTimestamp()});
+      if(audit.supervisorId){
+        await db.collection('notifications').add({
+          recipientId:audit.supervisorId,
+          title:'🎉 Plan completado al 100%',
+          body:`La auditoría "${audit.area||''}" fue cerrada automáticamente.`,
+          auditId,type:'closed',read:false,
+          createdAt:firebase.firestore.FieldValue.serverTimestamp()
+        });
+      }
+    }
+    // 3. Subir fotos como best-effort
     for(const [key,files] of Object.entries(rackSolveFiles)){
       for(const file of files){
         try{
@@ -2043,8 +2150,9 @@ async function submitGuestSolution(auditId,solveName){
     }
     await auth.signOut();
     Object.keys(rackSolveFiles).forEach(k=>delete rackSolveFiles[k]);
+    hideLoadingOverlay();
     showSuccessAnimation();
-  }catch(e){btnReset(saveBtn);showToast('Error: '+e.message,'error');}
+  }catch(e){hideLoadingOverlay();btnReset(saveBtn);showToast('Error: '+e.message,'error');}
 }
 
 function showBigSuccessToast(msg){
