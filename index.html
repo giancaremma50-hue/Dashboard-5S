@@ -356,6 +356,16 @@ select:focus,input:focus{border-color:var(--primary)}
   <div id="codeModalContent" style="width:100%;max-width:400px"></div>
 </div>
 
+<!-- CAMERA MODAL -->
+<div id="cameraModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9999;display:none;flex-direction:column;align-items:center;justify-content:center">
+  <video id="cameraVideo" autoplay playsinline style="width:100%;max-width:480px;border-radius:12px;background:#000"></video>
+  <canvas id="cameraCanvas" style="display:none"></canvas>
+  <div style="display:flex;gap:16px;margin-top:18px">
+    <button class="btn btn-accent" style="padding:12px 28px;font-size:15px" onclick="capturePhoto()">📸 Capturar</button>
+    <button class="btn btn-dark" style="padding:12px 28px;font-size:15px" onclick="stopCamera()">✕ Cancelar</button>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div class="toast-wrap" id="toastWrap"></div>
 
@@ -740,14 +750,12 @@ function renderFormulario(){
     <div class="audit-header-grid">
       <div class="form-group"><label>Área a auditar</label>
         <select id="fArea">${AREAS.map(a=>`<option value="${a}">${a}</option>`).join('')}</select></div>
-      <div class="form-group"><label>Duración de la auditoría</label>
+      <div class="form-group"><label>Tiempo estimado de solución</label>
         <select id="fDuration">
           <option value="24">⚡ 24 horas</option>
           <option value="48" selected>🕐 48 horas</option>
-          <option value="72">📅 72 horas</option>
-          <option value="168">📆 1 semana</option>
         </select></div>
-      <div class="form-group"><label>Supervisor asignado</label>
+      <div class="form-group"><label>Asignado a</label>
         <select id="fSupervisor"><option value="">Cargando...</option></select></div>
       <div class="form-group"><label>Observaciones generales</label>
         <input type="text" id="fObs" placeholder="Observaciones generales..."></div>
@@ -770,7 +778,6 @@ function buildCriteriosForm(){
         <th style="width:32px">#</th>
         <th>Criterio</th>
         <th style="min-width:110px">¿Cumple?</th>
-        <th style="min-width:110px">Duración</th>
         <th style="min-width:160px">Detalle del hallazgo</th>
         <th style="min-width:110px">Evidencia</th>
       </tr></thead>
@@ -782,18 +789,12 @@ function buildCriteriosForm(){
             <button class="yn-btn" id="yn-yes-${si}-${ii}" onclick="setYN(${si},${ii},'si')">✓ Sí</button>
             <button class="yn-btn" id="yn-no-${si}-${ii}" onclick="setYN(${si},${ii},'no')">✗ No</button>
           </div></td>
-          <td>
-            <select class="sla-select" id="sla-${si}-${ii}">
-              <option value="">—</option>
-              <option value="24">⚡ 24h</option>
-              <option value="48">🕐 48h</option>
-            </select>
-          </td>
           <td class="hallazgo-col" id="hallazgo-cell-${si}-${ii}" style="display:none"><textarea id="hallazgo-${si}-${ii}" placeholder="Describe el hallazgo..."></textarea></td>
           <td id="ev-cell-${si}-${ii}" style="display:none">
             <div>
-              <label class="evidencia-label" for="ev-${si}-${ii}">📷 Foto</label>
+              <label class="evidencia-label" for="ev-${si}-${ii}">📎 Subir archivo</label>
               <input type="file" id="ev-${si}-${ii}" style="display:none" accept="image/*" multiple onchange="previewEvidence(${si},${ii},this)">
+              <button type="button" class="evidencia-label" style="margin-left:6px" onclick="startCamera(${si},${ii})">📸 Tomar foto</button>
               <div class="evidencia-thumbs" id="thumbs-${si}-${ii}"></div>
             </div>
           </td>
@@ -836,6 +837,51 @@ function previewEvidence(si,ii,input){
   });
 }
 
+// ─── Cámara trasera ───────────────────────────────────
+let _camSi=null, _camIi=null, _camStream=null;
+
+async function startCamera(si,ii){
+  _camSi=si; _camIi=ii;
+  const modal=document.getElementById('cameraModal');
+  modal.style.display='flex';
+  try{
+    _camStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}}});
+    document.getElementById('cameraVideo').srcObject=_camStream;
+  }catch(e){
+    stopCamera();
+    showToast('No se pudo acceder a la cámara','error');
+  }
+}
+
+function capturePhoto(){
+  const video=document.getElementById('cameraVideo');
+  const canvas=document.getElementById('cameraCanvas');
+  canvas.width=video.videoWidth;
+  canvas.height=video.videoHeight;
+  canvas.getContext('2d').drawImage(video,0,0);
+  canvas.toBlob(blob=>{
+    const file=new File([blob],`foto_s${_camSi}_i${_camIi}_${Date.now()}.jpg`,{type:'image/jpeg'});
+    const key=`s${_camSi}_i${_camIi}`;
+    if(!evidenceFiles[key]) evidenceFiles[key]=[];
+    evidenceFiles[key].push(file);
+    const thumbs=document.getElementById(`thumbs-${_camSi}-${_camIi}`);
+    if(thumbs){
+      const img=document.createElement('img');
+      img.src=URL.createObjectURL(file);
+      thumbs.appendChild(img);
+    }
+    stopCamera();
+  },'image/jpeg',0.9);
+}
+
+function stopCamera(){
+  if(_camStream) _camStream.getTracks().forEach(t=>t.stop());
+  _camStream=null;
+  document.getElementById('cameraVideo').srcObject=null;
+  document.getElementById('cameraModal').style.display='none';
+}
+// ──────────────────────────────────────────────────────
+
 async function loadSupervisors(){
   const snap=await db.collection('users').where('role','==','supervisor').get();
   users=snap.docs.map(d=>({id:d.id,...d.data()}));
@@ -859,8 +905,7 @@ async function submitFormulario(){
     const key=`s${si}_i${ii}`;
     criterios[key]=ynState[key]||null;
     hallazgos[key]=document.getElementById(`hallazgo-${si}-${ii}`)?.value||'';
-    const slaVal=document.getElementById(`sla-${si}-${ii}`)?.value||'';
-    if(slaVal) hallazgoSLA[key]=Number(slaVal);
+    if(ynState[key]==='no') hallazgoSLA[key]=durationH;
   }));
   showToast('Guardando auditoría...','');
   try{
@@ -1457,14 +1502,12 @@ function showRackForm(){
             <input type="text" id="rName" placeholder="Escribe tu nombre"></div>
           <div class="form-group"><label>Área a auditar</label>
             <select id="rArea">${AREAS.map(a=>`<option value="${a}">${a}</option>`).join('')}</select></div>
-          <div class="form-group"><label>Duración de la auditoría</label>
+          <div class="form-group"><label>Tiempo estimado de solución</label>
             <select id="rDuration">
               <option value="24">⚡ 24 horas</option>
               <option value="48" selected>🕐 48 horas</option>
-              <option value="72">📅 72 horas</option>
-              <option value="168">📆 1 semana</option>
             </select></div>
-          <div class="form-group"><label>Supervisor asignado</label>
+          <div class="form-group"><label>Asignado a</label>
             <select id="rSupervisor"><option value="">Cargando...</option></select></div>
         </div>
       </div>
@@ -1535,8 +1578,7 @@ async function submitGuestAudit(){
     const key=`s${si}_i${ii}`;
     criterios[key]=ynState[key]||null;
     hallazgos[key]=document.getElementById(`hallazgo-${si}-${ii}`)?.value||'';
-    const slaVal=document.getElementById(`sla-${si}-${ii}`)?.value||'';
-    if(slaVal) hallazgoSLA[key]=Number(slaVal);
+    if(ynState[key]==='no') hallazgoSLA[key]=durationH;
   }));
 
   const auditCode=generateAuditCode();
