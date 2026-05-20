@@ -1032,7 +1032,7 @@ async function submitFormulario(){
       for(const file of files){
         try{
           const path=`audits/${docRef.id}/auditor/${key}_${Date.now()}_${file.name}`;
-          const snap2=await storage.ref(path).put(file);
+          const snap2=await uploadFileWithTimeout(storage.ref(path),file);
           const url=await snap2.ref.getDownloadURL();
           await db.collection('audits').doc(docRef.id).update({[`evidencias_auditor.${key}`]:firebase.firestore.FieldValue.arrayUnion(url)});
         }catch(_){photoErrors++;}
@@ -1234,7 +1234,7 @@ async function saveProgress(){
       for(const file of files){
         try{
           const path=`audits/${currentAudit.id}/supervisor/${key}_${Date.now()}_${file.name}`;
-          const snap2=await storage.ref(path).put(file);
+          const snap2=await uploadFileWithTimeout(storage.ref(path),file);
           const url=await snap2.ref.getDownloadURL();
           await db.collection('audits').doc(currentAudit.id).update({[`evidencias_supervisor.${key}`]:firebase.firestore.FieldValue.arrayUnion(url)});
         }catch(_){photoErrors++;}
@@ -1667,6 +1667,19 @@ function toggleNotifPanel(){
 // ═══════════════════════════════════════
 // UTILS
 // ═══════════════════════════════════════
+// Upload helper: cancela si no termina en `ms` milisegundos (default 15s)
+function uploadFileWithTimeout(storageRef,file,ms=15000){
+  return new Promise((resolve,reject)=>{
+    const task=storageRef.put(file);
+    const timer=setTimeout(()=>{
+      try{task.cancel();}catch(_){}
+      reject(new Error('upload_timeout'));
+    },ms);
+    task.then(snap=>{clearTimeout(timer);resolve(snap);})
+        .catch(err=>{clearTimeout(timer);reject(err);});
+  });
+}
+
 function showToast(msg,type=''){
   const wrap=document.getElementById('toastWrap');
   const t=document.createElement('div');
@@ -1892,7 +1905,7 @@ async function submitGuestAudit(){
       for(const file of files){
         try{
           const path=`audits/${docRef.id}/auditor/${key}_${Date.now()}_${file.name}`;
-          const snap2=await storage.ref(path).put(file);
+          const snap2=await uploadFileWithTimeout(storage.ref(path),file);
           const url=await snap2.ref.getDownloadURL();
           await db.collection('audits').doc(docRef.id).update({[`evidencias_auditor.${key}`]:firebase.firestore.FieldValue.arrayUnion(url)});
         }catch(_){}
@@ -2013,7 +2026,7 @@ async function submitGuestSolution(auditId,solveName){
       for(const file of files){
         try{
           const path=`audits/${auditId}/supervisor/${key}_${Date.now()}_${file.name}`;
-          const snap2=await storage.ref(path).put(file);
+          const snap2=await uploadFileWithTimeout(storage.ref(path),file);
           const url=await snap2.ref.getDownloadURL();
           await db.collection('audits').doc(auditId).update({[`evidencias_supervisor.${key}`]:firebase.firestore.FieldValue.arrayUnion(url)});
         }catch(_){}
