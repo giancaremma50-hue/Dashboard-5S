@@ -696,7 +696,10 @@ function renderKanban(){
       return `<div class="kanban-card${a.status==='late'?' late-card':''}" onclick="openAuditModal('${a.id}')">
         <div class="kc-id">#${a.id.substring(0,8).toUpperCase()}${a.guestAudit?'&nbsp;<span style="background:#f3e8ff;color:#6b21a8;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px">👤 Rack</span>':''}</div>
         <div class="kc-area">📍 ${a.area||'—'}</div>
-        <div class="kc-meta">👤 ${a.auditorName||'—'}${role!=='operador'?' · 👔 '+( a.supervisorName||'—'):''}</div>
+        <div class="kc-meta" style="line-height:1.8">
+          <div>📝 Creado por: <strong>${a.auditorName||'—'}</strong></div>
+          ${role!=='operador'?`<div>👔 Asignado a: <strong>${a.supervisorName||'—'}</strong></div>`:''}
+        </div>
         ${hasVencido&&a.status!=='closed'?'<span class="sla-vencido">⚡ SLA vencido</span>':''}
         <div class="progress-bar-wrap"><div class="progress-bar ${pbcls}" style="width:${pct}%"></div></div>
         <div class="kc-footer">
@@ -737,8 +740,13 @@ function renderFormulario(){
     <div class="audit-header-grid">
       <div class="form-group"><label>Área a auditar</label>
         <select id="fArea">${AREAS.map(a=>`<option value="${a}">${a}</option>`).join('')}</select></div>
-      <div class="form-group"><label>Fecha límite de solución</label>
-        <input type="date" id="fDeadline" min="${new Date().toISOString().split('T')[0]}"></div>
+      <div class="form-group"><label>Duración de la auditoría</label>
+        <select id="fDuration">
+          <option value="24">⚡ 24 horas</option>
+          <option value="48" selected>🕐 48 horas</option>
+          <option value="72">📅 72 horas</option>
+          <option value="168">📆 1 semana</option>
+        </select></div>
       <div class="form-group"><label>Supervisor asignado</label>
         <select id="fSupervisor"><option value="">Cargando...</option></select></div>
       <div class="form-group"><label>Observaciones generales</label>
@@ -762,7 +770,7 @@ function buildCriteriosForm(){
         <th style="width:32px">#</th>
         <th>Criterio</th>
         <th style="min-width:110px">¿Cumple?</th>
-        <th style="min-width:80px">SLA</th>
+        <th style="min-width:110px">Duración</th>
         <th style="min-width:160px">Detalle del hallazgo</th>
         <th style="min-width:110px">Evidencia</th>
       </tr></thead>
@@ -781,8 +789,8 @@ function buildCriteriosForm(){
               <option value="48">🕐 48h</option>
             </select>
           </td>
-          <td class="hallazgo-col"><textarea id="hallazgo-${si}-${ii}" placeholder="Describe el hallazgo..."></textarea></td>
-          <td>
+          <td class="hallazgo-col" id="hallazgo-cell-${si}-${ii}" style="display:none"><textarea id="hallazgo-${si}-${ii}" placeholder="Describe el hallazgo..."></textarea></td>
+          <td id="ev-cell-${si}-${ii}" style="display:none">
             <div>
               <label class="evidencia-label" for="ev-${si}-${ii}">📷 Foto</label>
               <input type="file" id="ev-${si}-${ii}" style="display:none" accept="image/*" multiple onchange="previewEvidence(${si},${ii},this)">
@@ -800,6 +808,20 @@ function setYN(si,ii,val){
   ynState[key]=val;
   document.getElementById(`yn-yes-${si}-${ii}`).className='yn-btn'+(val==='si'?' yes-active':'');
   document.getElementById(`yn-no-${si}-${ii}`).className='yn-btn'+(val==='no'?' no-active':'');
+  // Mostrar hallazgo y evidencia solo cuando la respuesta es No
+  const show=val==='no'?'':'none';
+  const hCell=document.getElementById(`hallazgo-cell-${si}-${ii}`);
+  const eCell=document.getElementById(`ev-cell-${si}-${ii}`);
+  if(hCell) hCell.style.display=show;
+  if(eCell) eCell.style.display=show;
+  // Limpiar si cambia a Sí
+  if(val==='si'){
+    const ta=document.getElementById(`hallazgo-${si}-${ii}`);
+    if(ta) ta.value='';
+    const thumbs=document.getElementById(`thumbs-${si}-${ii}`);
+    if(thumbs) thumbs.innerHTML='';
+    delete evidenceFiles[key];
+  }
 }
 
 function previewEvidence(si,ii,input){
@@ -826,10 +848,10 @@ async function loadSupervisors(){
 
 async function submitFormulario(){
   const area=document.getElementById('fArea')?.value;
-  const deadline=document.getElementById('fDeadline')?.value;
+  const durationH=parseInt(document.getElementById('fDuration')?.value||'48');
+  const deadline=new Date(Date.now()+durationH*3600000);
   const supervisorId=document.getElementById('fSupervisor')?.value;
   const obs=document.getElementById('fObs')?.value||'';
-  if(!deadline){showToast('Selecciona una fecha límite','error');return;}
   if(!supervisorId){showToast('Selecciona un supervisor','error');return;}
   const sup=users.find(u=>u.id===supervisorId);
   const criterios={}, hallazgos={}, hallazgoSLA={};
@@ -849,7 +871,7 @@ async function submitFormulario(){
       auditorName:currentUserData.name||currentUserData.email,
       supervisorId,
       supervisorName:sup?.name||sup?.email||'—',
-      deadline:new Date(deadline+'T23:59:59'),
+      deadline,
       createdAt:firebase.firestore.FieldValue.serverTimestamp(),
       collaborators:[],
       notas:[],
@@ -944,7 +966,7 @@ async function openAuditModal(auditId){
     }).join('');
     return `<div class="section-header"><span>${sec.s} — ${sec.nombre}</span><span class="section-score">${yes}/${sec.items.length} · ${pct}%</span></div>
       <div style="overflow-x:auto;margin-bottom:18px"><table class="criteria-table">
-        <thead><tr><th>#</th><th>Criterio</th><th>¿Cumple?</th><th>SLA</th><th>Detalle hallazgo</th><th>Evidencia</th>
+        <thead><tr><th>#</th><th>Criterio</th><th>¿Cumple?</th><th>Duración</th><th>Detalle hallazgo</th><th>Evidencia</th>
         <th>${canSolve?'Detalle de la solución':'Solución'}</th><th>${canSolve?'Evidencia solución':'Evidencia sup.'}</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>`;
@@ -1404,8 +1426,13 @@ function showRackForm(){
           <input type="text" id="rName" placeholder="Escribe tu nombre"></div>
         <div class="form-group"><label>Área a auditar</label>
           <select id="rArea">${AREAS.map(a=>`<option value="${a}">${a}</option>`).join('')}</select></div>
-        <div class="form-group"><label>Fecha límite de solución</label>
-          <input type="date" id="rDeadline" min="${new Date().toISOString().split('T')[0]}"></div>
+        <div class="form-group"><label>Duración de la auditoría</label>
+          <select id="rDuration">
+            <option value="24">⚡ 24 horas</option>
+            <option value="48" selected>🕐 48 horas</option>
+            <option value="72">📅 72 horas</option>
+            <option value="168">📆 1 semana</option>
+          </select></div>
         <div class="form-group"><label>Supervisor asignado</label>
           <select id="rSupervisor"><option value="">Cargando...</option></select></div>
       </div>
@@ -1457,10 +1484,10 @@ async function loadRackSupervisors(){
 async function submitGuestAudit(){
   const name=document.getElementById('rName')?.value.trim();
   const area=document.getElementById('rArea')?.value;
-  const deadline=document.getElementById('rDeadline')?.value;
+  const durationH=parseInt(document.getElementById('rDuration')?.value||'48');
+  const deadline=new Date(Date.now()+durationH*3600000);
   const supervisorId=document.getElementById('rSupervisor')?.value;
   if(!name){showToast('Escribe tu nombre','error');return;}
-  if(!deadline){showToast('Selecciona una fecha límite','error');return;}
   if(!supervisorId){showToast('Selecciona un supervisor','error');return;}
 
   let anonUid;
@@ -1491,7 +1518,7 @@ async function submitGuestAudit(){
       auditorName:name,
       supervisorId,
       supervisorName:sup.name||sup.email||'—',
-      deadline:new Date(deadline+'T23:59:59'),
+      deadline,
       createdAt:firebase.firestore.FieldValue.serverTimestamp(),
       guestAudit:true,
       guestAuditorName:name,
