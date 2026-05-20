@@ -714,6 +714,33 @@ function getSLACountdown(createdAt, slaHours){
   return {label:`${h}h ${m}m restantes`,cls:slaHours===24?'sla-24':'sla-48'};
 }
 
+function formatTimer(audit){
+  if(!audit.createdAt) return null;
+  // Determinar duración del plan a partir del primer hallazgoSLA registrado, o deadline
+  let durationH=null;
+  if(audit.hallazgoSLA){
+    const vals=Object.values(audit.hallazgoSLA).filter(v=>v);
+    if(vals.length) durationH=Number(vals[0]);
+  }
+  if(!durationH&&audit.deadline){
+    const dl=audit.deadline.toDate?audit.deadline.toDate():new Date(audit.deadline);
+    const cr=audit.createdAt.toDate?audit.createdAt.toDate():new Date(audit.createdAt);
+    durationH=Math.round((dl-cr)/3600000);
+  }
+  if(!durationH) return null;
+  const created=audit.createdAt.toDate?audit.createdAt.toDate():new Date(audit.createdAt);
+  const dl=new Date(created.getTime()+durationH*3600000);
+  const diff=dl-new Date();
+  if(diff<=0) return {label:'⚡ Tiempo vencido',color:'var(--red)',pct:100};
+  const h=Math.floor(diff/3600000);
+  const d=Math.floor(h/24);
+  const remH=h%24;
+  const label=d>0?`⏱ ${d}d ${remH}h restantes`:`⏱ ${h}h restantes`;
+  const pct=Math.max(0,Math.min(100,Math.round((1-(diff/(durationH*3600000)))*100)));
+  const color=pct>=90?'var(--red)':pct>=60?'#d97706':'var(--green)';
+  return {label,color,pct};
+}
+
 // ═══════════════════════════════════════
 // KANBAN
 // ═══════════════════════════════════════
@@ -774,6 +801,7 @@ function renderKanban(){
         return new Date(created.getTime()+Number(s)*3600000)<new Date();
       });
       const solverLine=a.lastSolvedBy?`<div>✅ Solucionado por: <strong>${a.lastSolvedBy}</strong></div>`:'';
+      const timer=a.status!=='closed'?formatTimer(a):null;
       return `<div class="kanban-card${a.status==='late'?' late-card':''}" onclick="openAuditModal('${a.id}')">
         <div class="kc-id">#${a.id.substring(0,8).toUpperCase()}${a.guestAudit?'&nbsp;<span style="background:#f3e8ff;color:#6b21a8;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px">👤 Rack</span>':''}</div>
         <div class="kc-area">📍 ${a.area||'—'}</div>
@@ -782,7 +810,7 @@ function renderKanban(){
           ${role!=='operador'?`<div>👔 Asignado a: <strong>${a.supervisorName||'—'}</strong></div>`:''}
           ${solverLine}
         </div>
-        ${hasVencido&&a.status!=='closed'?'<span class="sla-vencido">⚡ SLA vencido</span>':''}
+        ${timer?`<div style="font-size:10px;font-weight:700;color:${timer.color};margin:4px 0 2px;letter-spacing:.2px">${timer.label}</div>`:''}
         <div class="progress-bar-wrap"><div class="progress-bar ${pbcls}" style="width:${resultado??0}%"></div></div>
         <div class="kc-footer">
           <span style="font-size:10px;color:var(--muted)">Resultado: <strong style="color:${resultado===null?'var(--muted)':resultado>=80?'#16a34a':resultado>=50?'#d97706':'#dc2626'}">${resultado!==null?resultado+'%':'Sin datos'}</strong></span>
@@ -1057,28 +1085,23 @@ async function openAuditModal(auditId){
       const val=audit.criterios?.[key];
       const hallazgo=audit.hallazgos?.[key]||'—';
       const solucion=audit.soluciones?.[key]||'';
-      const slaH=audit.hallazgoSLA?.[key];
+      const solverName=audit.solucionadoPor?.[key]||'';
       const evA=audit.evidencias_auditor?.[key]||[];
       const evS=audit.evidencias_supervisor?.[key]||[];
       const ynDisp=val==='si'?'<span class="pill pill-green">✓ Sí</span>':val==='no'?'<span class="pill pill-red">✗ No</span>':'<span class="pill">—</span>';
-      let slaDisp='—';
-      if(slaH && audit.createdAt){
-        const cd=getSLACountdown(audit.createdAt,slaH);
-        if(cd) slaDisp=`<span class="${cd.cls}">${slaH}h · ${cd.label}</span>`;
-      }
       const evAhtml=evA.map(u=>`<img src="${u}" style="width:36px;height:36px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer;margin:2px" onclick="window.open('${u}','_blank')">`).join('');
       const evShtml=evS.map(u=>`<img src="${u}" style="width:36px;height:36px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer;margin:2px" onclick="window.open('${u}','_blank')">`).join('');
+      const solverTag=solverName?`<div style="font-size:10px;color:#16a34a;margin-top:4px;font-weight:700">✅ ${solverName}</div>`:'';
       const solCol=canSolve
-        ? `<td class="solucion-col"><textarea id="sol-${si}-${ii}" placeholder="Detalle de la solución...">${solucion}</textarea></td>
+        ? `<td class="solucion-col"><textarea id="sol-${si}-${ii}" placeholder="Detalle de la solución...">${solucion}</textarea>${solverTag}</td>
            <td><label class="evidencia-label" for="sev-${si}-${ii}">📷 Evidencia</label>
            <input type="file" id="sev-${si}-${ii}" style="display:none" accept="image/*" multiple onchange="previewSupEv(${si},${ii},this)">
            <div class="evidencia-thumbs" id="sthumbs-${si}-${ii}">${evShtml}</div></td>`
-        : `<td style="font-size:12px">${solucion||'—'}</td><td><div class="evidencia-thumbs">${evShtml||'—'}</div></td>`;
+        : `<td style="font-size:12px">${solucion||'—'}${solverTag}</td><td><div class="evidencia-thumbs">${evShtml||'—'}</div></td>`;
       return `<tr>
         <td style="color:var(--muted);font-weight:700">${ii+1}</td>
         <td style="font-weight:600;line-height:1.4">${item}</td>
         <td>${ynDisp}</td>
-        <td>${slaDisp}</td>
         <td style="font-size:12px">${hallazgo}</td>
         <td><div class="evidencia-thumbs">${evAhtml||'—'}</div></td>
         ${solCol}
@@ -1086,7 +1109,7 @@ async function openAuditModal(auditId){
     }).join('');
     return `<div class="section-header"><span>${sec.s} — ${sec.nombre}</span><span class="section-score">${yes}/${sec.items.length} · ${pct}%</span></div>
       <div style="overflow-x:auto;margin-bottom:18px"><table class="criteria-table">
-        <thead><tr><th>#</th><th>Criterio</th><th>¿Cumple?</th><th>Duración</th><th>Detalle hallazgo</th><th>Evidencia</th>
+        <thead><tr><th>#</th><th>Criterio</th><th>¿Cumple?</th><th>Detalle hallazgo</th><th>Evidencia</th>
         <th>${canSolve?'Detalle de la solución':'Solución'}</th><th>${canSolve?'Evidencia solución':'Evidencia sup.'}</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>`;
@@ -1151,11 +1174,15 @@ function previewSupEv(si,ii,input){
 
 async function saveProgress(){
   if(!currentAudit) return;
-  const soluciones={};
+  const solverName=currentUserData?.name||currentUserData?.email||'Supervisor';
+  const updates={status:'inprog',updatedAt:firebase.firestore.FieldValue.serverTimestamp(),lastSolvedBy:solverName};
   CRITERIOS_5S.forEach((sec,si)=>sec.items.forEach((_,ii)=>{
     const key=`s${si}_i${ii}`;
     const el=document.getElementById(`sol-${si}-${ii}`);
-    if(el) soluciones[key]=el.value||'';
+    if(el){
+      updates[`soluciones.${key}`]=el.value||'';
+      if((el.value||'').trim()) updates[`solucionadoPor.${key}`]=solverName;
+    }
   }));
   showToast('Guardando...','');
   try{
@@ -1167,10 +1194,7 @@ async function saveProgress(){
         await db.collection('audits').doc(currentAudit.id).update({[`evidencias_supervisor.${key}`]:firebase.firestore.FieldValue.arrayUnion(url)});
       }
     }
-    await db.collection('audits').doc(currentAudit.id).update({
-      soluciones, status:'inprog',
-      updatedAt:firebase.firestore.FieldValue.serverTimestamp()
-    });
+    await db.collection('audits').doc(currentAudit.id).update(updates);
     await createNotif(currentAudit.auditorId,{
       title:'Avance registrado',
       body:`${currentUserData.name||currentUserData.email} actualizó la solución de auditoría #${currentAudit.id.substring(0,8).toUpperCase()}`,
@@ -1885,11 +1909,14 @@ async function submitGuestSolution(auditId,solveName){
     '¿Deseas confirmar y guardar?'
   );
   if(!confirmed) return;
-  const soluciones={};
+  const updates={status:'inprog',updatedAt:firebase.firestore.FieldValue.serverTimestamp(),lastSolvedBy:solveName};
   CRITERIOS_5S.forEach((sec,si)=>sec.items.forEach((_,ii)=>{
     const key=`s${si}_i${ii}`;
     const el=document.getElementById(`rsol-${si}-${ii}`);
-    if(el) soluciones[key]=el.value||'';
+    if(el&&(el.value||'').trim()){
+      updates[`soluciones.${key}`]=el.value.trim();
+      updates[`solucionadoPor.${key}`]=solveName;
+    }
   }));
   showToast('Guardando solución...','');
   try{
@@ -1901,11 +1928,7 @@ async function submitGuestSolution(auditId,solveName){
         await db.collection('audits').doc(auditId).update({[`evidencias_supervisor.${key}`]:firebase.firestore.FieldValue.arrayUnion(url)});
       }
     }
-    await db.collection('audits').doc(auditId).update({
-      soluciones,status:'inprog',
-      updatedAt:firebase.firestore.FieldValue.serverTimestamp(),
-      lastSolvedBy:solveName
-    });
+    await db.collection('audits').doc(auditId).update(updates);
     if(audit?.supervisorId){
       await db.collection('notifications').add({
         recipientId:audit.supervisorId,
@@ -1917,9 +1940,33 @@ async function submitGuestSolution(auditId,solveName){
     }
     await auth.signOut();
     Object.keys(rackSolveFiles).forEach(k=>delete rackSolveFiles[k]);
-    showToast('✅ Solución guardada correctamente','success');
-    setTimeout(()=>showRackHome(),1800);
+    showSuccessAnimation();
   }catch(e){showToast('Error: '+e.message,'error');}
+}
+
+function showSuccessAnimation(){
+  const overlay=document.createElement('div');
+  overlay.id='successOverlay';
+  overlay.style.cssText='position:fixed;inset:0;background:#fff;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;animation:fadeInUp .35s ease';
+  overlay.innerHTML=`
+    <div style="animation:popIn .4s cubic-bezier(.34,1.56,.64,1)">
+      <div style="width:96px;height:96px;border-radius:50%;background:#16a34a;display:flex;align-items:center;justify-content:center;margin:0 auto 24px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="52" height="52">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+      </div>
+      <div style="font-size:22px;font-weight:900;color:#15803d;text-align:center;margin-bottom:8px">Tus cambios fueron registrados</div>
+      <div style="font-size:14px;color:var(--muted);text-align:center">Redirigiendo en unos segundos…</div>
+    </div>`;
+  document.body.appendChild(overlay);
+  setTimeout(()=>{
+    overlay.style.transition='opacity .4s';
+    overlay.style.opacity='0';
+    setTimeout(()=>{
+      overlay.remove();
+      showRackHome();
+    },400);
+  },3500);
 }
 
 function previewRackSolveEv(si,ii,input){
