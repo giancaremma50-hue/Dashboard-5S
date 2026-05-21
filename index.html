@@ -2210,6 +2210,10 @@ async function lookupByCode(){
       document.getElementById('rSolveResult').innerHTML=`<div style="background:var(--greenbg);color:var(--green);border-radius:12px;padding:14px;font-size:13px;text-align:center">✅ Esta auditoría ya está cerrada. No requiere más acciones.</div>`;
       return;
     }
+    if(audit.status==='review'){
+      document.getElementById('rSolveResult').innerHTML=`<div style="background:var(--tealbg);color:var(--teal);border-radius:12px;padding:14px;font-size:13px;text-align:center">🔵 Tus soluciones ya fueron enviadas y están en revisión por el supervisor. Espera su aprobación.</div>`;
+      return;
+    }
     renderSolveForm(audit,name);
   }catch(e){
     btnReset(btn);
@@ -2267,7 +2271,8 @@ async function submitGuestSolution(auditId,solveName){
   if(!confirmed) return;
   const saveBtn=document.querySelector('[onclick*="submitGuestSolution"]');
   btnLoad(saveBtn,'⏳ Guardando...');
-  const updates={status:'inprog',updatedAt:firebase.firestore.FieldValue.serverTimestamp(),lastSolvedBy:solveName};
+  // Solo mover a 'inprog' si estaba en pending; si ya está en inprog lo deja igual
+  const updates={status:audit.status==='pending'?'inprog':audit.status,updatedAt:firebase.firestore.FieldValue.serverTimestamp(),lastSolvedBy:solveName};
   CRITERIOS_5S.forEach((sec,si)=>sec.items.forEach((_,ii)=>{
     const key=`s${si}_i${ii}`;
     const el=document.getElementById(`rsol-${si}-${ii}`);
