@@ -1269,6 +1269,11 @@ async function openAuditModal(auditId){
   if(canSolve && audit.status==='closed'){
     footer+=`<button class="btn btn-sm" style="border:1.5px solid #d97706;color:#92400e;background:#fff" onclick="reopenAudit('${audit.id}')">↩ Reabrir plan</button>`;
   }
+  // Si un plan de rack llegó al 100% pero quedó stuck en 'inprog', el admin/supervisor puede enviarlo a revisión
+  const score=calcAuditScore(audit);
+  if((canSolve||role==='admin')&&audit.status==='inprog'&&audit.guestAudit&&score.overall===100){
+    footer+=`<button class="btn btn-teal btn-sm" onclick="sendToReview('${audit.id}')">🔵 Enviar a Revisión</button>`;
+  }
   if(role==='admin'){
     footer+=`<button class="btn btn-danger btn-sm" onclick="deleteAudit('${audit.id}')">🗑 Eliminar</button>`;
   }
@@ -1469,6 +1474,27 @@ async function approveAudit(auditId){
     hideLoadingOverlay();
     showToast('✅ Plan aprobado y cerrado','success');
   }catch(e){hideLoadingOverlay();btnReset(btn);showToast('Error: '+e.message,'error');}
+}
+
+async function sendToReview(auditId){
+  if(!confirm('¿Mover este plan a "En revisión"? El supervisor podrá aprobar o regresar las soluciones.')) return;
+  const btn=document.querySelector(`[onclick="sendToReview('${auditId}')"]`);
+  btnLoad(btn,'⏳...');
+  try{
+    await db.collection('audits').doc(auditId).update({
+      status:'review',
+      updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+    if(currentAudit?.supervisorId){
+      await createNotif(currentAudit.supervisorId,{
+        title:'🔵 Plan al 100% — pendiente revisión',
+        body:`Auditoría "${currentAudit.area||''}" enviada a revisión manual.`,
+        auditId,type:'review'
+      });
+    }
+    showToast('Plan movido a revisión','success');
+    closeAuditModal();
+  }catch(e){btnReset(btn);showToast('Error: '+e.message,'error');}
 }
 
 async function deleteAudit(id){
@@ -2285,27 +2311,34 @@ async function submitGuestSolution(auditId,solveName){
   try{
     // 1. Guardar soluciones primero (siempre)
     await db.collection('audits').doc(auditId).update(updates);
-    // 2. Auto-cierre si llega a 100% (try/catch independiente para no bloquear el flujo)
+    // 2. Auto-revisión si llega al 100%: re-leer Firestore para tener datos actualizados
     let autoClosed=false;
     try{
-      const mergedSol={...(audit.soluciones||{})};
-      Object.entries(updates).forEach(([k,v])=>{if(k.startsWith('soluciones.'))mergedSol[k.slice(10)]=v;});
-      const newScore=calcAuditScore({...audit,soluciones:mergedSol});
-      if(newScore.overall===100&&audit.status!=='closed'&&audit.status!=='review'){
-        // Rack user → goes to "review" so supervisor can verify before closing
-        await db.collection('audits').doc(auditId).update({status:'review',updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
-        if(audit.supervisorId){
-          await db.collection('notifications').add({
-            recipientId:audit.supervisorId,
-            title:'🔵 Plan al 100% — pendiente revisión',
-            body:`${solveName} completó todas las soluciones en "${audit.area||''}". Revisa y aprueba el cierre.`,
-            auditId,type:'review',read:false,
-            createdAt:firebase.firestore.FieldValue.serverTimestamp()
+      const freshSnap=await db.collection('audits').doc(auditId).get();
+      if(freshSnap.exists){
+        const freshAudit={id:freshSnap.id,...freshSnap.data()};
+        const newScore=calcAuditScore(freshAudit);
+        if(newScore.overall===100&&freshAudit.status!=='closed'&&freshAudit.status!=='review'){
+          await db.collection('audits').doc(auditId).update({
+            status:'review',
+            updatedAt:firebase.firestore.FieldValue.serverTimestamp()
           });
+          if(freshAudit.supervisorId){
+            await db.collection('notifications').add({
+              recipientId:freshAudit.supervisorId,
+              title:'🔵 Plan al 100% — pendiente revisión',
+              body:`${solveName} completó todas las soluciones en "${freshAudit.area||''}". Revisa y aprueba el cierre.`,
+              auditId,type:'review',read:false,
+              createdAt:firebase.firestore.FieldValue.serverTimestamp()
+            });
+          }
+          autoClosed=true;
         }
-        autoClosed=true;
       }
-    }catch(autoErr){console.error('Auto-close error:',autoErr);}
+    }catch(autoErr){
+      console.error('Auto-review error:',autoErr);
+      // No mostramos toast aquí para no confundir al usuario — la solución ya se guardó correctamente
+    }
     // 3. Subir fotos como best-effort
     for(const [key,files] of Object.entries(rackSolveFiles)){
       for(const file of files){
@@ -2317,12 +2350,12 @@ async function submitGuestSolution(auditId,solveName){
         }catch(err){console.error('rackSolve photo err:',err);}
       }
     }
-    // 4. Notificar supervisor solo si no se auto-cerró (evitar doble notificación)
+    // 4. Notificar supervisor solo si no se pasó a revisión (evitar doble notificación)
     if(!autoClosed&&audit?.supervisorId){
       await db.collection('notifications').add({
         recipientId:audit.supervisorId,
-        title:'Solución registrada (Rack)',
-        body:`${solveName} registró una solución — ${audit.area||''} · Código: ${audit.auditCode||''}`,
+        title:'Solución parcial registrada (Rack)',
+        body:`${solveName} registró avance — ${audit.area||''} · Código: ${audit.auditCode||''}`,
         auditId,type:'update',read:false,
         createdAt:firebase.firestore.FieldValue.serverTimestamp()
       });
