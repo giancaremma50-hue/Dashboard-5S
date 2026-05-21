@@ -1081,7 +1081,7 @@ async function submitFormulario(){
       notas:[],
     });
     // Upload evidence — best-effort, never blocks save
-    let photoErrors=0;
+    let photoErrors=0, photoOk=0;
     for(const [key,files] of Object.entries(evidenceFiles)){
       for(const file of files){
         try{
@@ -1089,9 +1089,11 @@ async function submitFormulario(){
           await uploadFileWithTimeout(ref,file);
           const url=await ref.getDownloadURL();
           await db.collection('audits').doc(docRef.id).update({[`evidencias_auditor.${key}`]:firebase.firestore.FieldValue.arrayUnion(url)});
+          photoOk++;
         }catch(err){photoErrors++;console.error('submitFormulario photo err:',err);}
       }
     }
+    if(photoOk>0) showToast(`📎 ${photoOk} foto(s) guardadas`,'success');
     if(photoErrors) showToast(`⚠ ${photoErrors} foto(s) no se pudieron subir`,'error');
     await createNotif(supervisorId,{
       title:'Nueva auditoría asignada',
@@ -1113,8 +1115,20 @@ let currentAudit=null;
 const supEvidenceFiles={};
 
 async function openAuditModal(auditId){
-  const audit=audits.find(a=>a.id===auditId);
-  if(!audit){showToast('No encontrada','error');return;}
+  // Fetch fresh from Firestore so evidencias_auditor URLs (uploaded after doc creation) are visible
+  let audit;
+  try{
+    const snap=await db.collection('audits').doc(auditId).get();
+    if(!snap.exists){showToast('No encontrada','error');return;}
+    audit={id:snap.id,...snap.data()};
+    // Keep in-memory array in sync
+    const idx=audits.findIndex(a=>a.id===auditId);
+    if(idx>=0) audits[idx]=audit;
+  }catch(e){
+    // Firestore unavailable — fall back to cache
+    audit=audits.find(a=>a.id===auditId);
+    if(!audit){showToast('No encontrada','error');return;}
+  }
   currentAudit=audit;
   const role=currentUserData.role;
   const dl=audit.deadline?(audit.deadline.toDate?audit.deadline.toDate():new Date(audit.deadline)):null;
@@ -2083,6 +2097,7 @@ async function submitGuestAudit(){
       notas:[],
     });
     // Upload evidence — best-effort, never blocks save
+    let gPhotoOk=0;
     for(const [key,files] of Object.entries(evidenceFiles)){
       for(const file of files){
         try{
@@ -2090,9 +2105,11 @@ async function submitGuestAudit(){
           await uploadFileWithTimeout(ref,file);
           const url=await ref.getDownloadURL();
           await db.collection('audits').doc(docRef.id).update({[`evidencias_auditor.${key}`]:firebase.firestore.FieldValue.arrayUnion(url)});
+          gPhotoOk++;
         }catch(err){console.error('guestAudit photo err:',err);}
       }
     }
+    if(gPhotoOk>0) showToast(`📎 ${gPhotoOk} foto(s) guardadas`,'success');
     await db.collection('notifications').add({
       recipientId:supervisorId,
       title:'Nueva auditoría asignada (Rack)',
