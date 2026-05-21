@@ -1,0 +1,8 @@
+[build]
+  publish = "."
+  functions = "netlify/functions"
+
+# La Firebase API key (AIza...) es pública por diseño — la seguridad
+# de Firebase se maneja con reglas de Firestore, no ocultando esta key.
+[build.environment]
+  SECRETS_SCAN_SMART_DETECTION_ENABLED = "false"
