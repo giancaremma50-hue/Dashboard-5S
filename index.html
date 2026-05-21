@@ -1085,11 +1085,11 @@ async function submitFormulario(){
     for(const [key,files] of Object.entries(evidenceFiles)){
       for(const file of files){
         try{
-          const path=`audits/${docRef.id}/auditor/${key}_${Date.now()}_${file.name}`;
-          const snap2=await uploadFileWithTimeout(storage.ref(path),file);
-          const url=await snap2.ref.getDownloadURL();
+          const ref=storage.ref(`audits/${docRef.id}/auditor/${key}_${Date.now()}_${file.name}`);
+          await uploadFileWithTimeout(ref,file);
+          const url=await ref.getDownloadURL();
           await db.collection('audits').doc(docRef.id).update({[`evidencias_auditor.${key}`]:firebase.firestore.FieldValue.arrayUnion(url)});
-        }catch(_){photoErrors++;}
+        }catch(err){photoErrors++;console.error('submitFormulario photo err:',err);}
       }
     }
     if(photoErrors) showToast(`⚠ ${photoErrors} foto(s) no se pudieron subir`,'error');
@@ -1305,18 +1305,20 @@ async function saveProgress(){
     for(const [key,files] of Object.entries(supEvidenceFiles)){
       for(const file of files){
         try{
-          const path=`audits/${currentAudit.id}/supervisor/${key}_${Date.now()}_${file.name}`;
-          const snap2=await uploadFileWithTimeout(storage.ref(path),file);
-          const url=await snap2.ref.getDownloadURL();
+          const ref=storage.ref(`audits/${currentAudit.id}/supervisor/${key}_${Date.now()}_${file.name}`);
+          await uploadFileWithTimeout(ref,file);
+          const url=await ref.getDownloadURL();
           await db.collection('audits').doc(currentAudit.id).update({[`evidencias_supervisor.${key}`]:firebase.firestore.FieldValue.arrayUnion(url)});
-        }catch(_){photoErrors++;}
+        }catch(err){photoErrors++;console.error('saveProgress photo err:',err);}
       }
     }
-    await createNotif(currentAudit.auditorId,{
-      title:'Avance registrado',
-      body:`${currentUserData.name||currentUserData.email} actualizó la solución de auditoría #${currentAudit.id.substring(0,8).toUpperCase()}`,
-      auditId:currentAudit.id, type:'update'
-    });
+    if(!autoClosed){
+      await createNotif(currentAudit.auditorId,{
+        title:'Avance registrado',
+        body:`${currentUserData.name||currentUserData.email} actualizó la solución de auditoría #${currentAudit.id.substring(0,8).toUpperCase()}`,
+        auditId:currentAudit.id, type:'update'
+      });
+    }
     Object.keys(supEvidenceFiles).forEach(k=>delete supEvidenceFiles[k]);
     closeAuditModal();
     hideLoadingOverlay();
@@ -1326,19 +1328,55 @@ async function saveProgress(){
 }
 
 async function closeAuditAction(){
+  if(!currentAudit) return;
   const btn=document.querySelector('[onclick="closeAuditAction()"]');
   btnLoad(btn,'⏳ Cerrando...');
+  showLoadingOverlay('Cerrando plan...');
+  // Capturar IDs antes de cualquier await que pueda anular currentAudit
+  const auditId=currentAudit.id;
+  const auditorId=currentAudit.auditorId;
+  const solverName=currentUserData?.name||currentUserData?.email||'Supervisor';
   try{
-    await saveProgress();
-    await db.collection('audits').doc(currentAudit.id).update({status:'closed',closedAt:firebase.firestore.FieldValue.serverTimestamp()});
-    await createNotif(currentAudit.auditorId,{
+    // 1. Guardar soluciones + cerrar en una sola escritura
+    const updates={
+      status:'closed',
+      closedAt:firebase.firestore.FieldValue.serverTimestamp(),
+      updatedAt:firebase.firestore.FieldValue.serverTimestamp(),
+      lastSolvedBy:solverName
+    };
+    CRITERIOS_5S.forEach((sec,si)=>sec.items.forEach((_,ii)=>{
+      const key=`s${si}_i${ii}`;
+      const el=document.getElementById(`sol-${si}-${ii}`);
+      if(el){
+        updates[`soluciones.${key}`]=el.value||'';
+        if((el.value||'').trim()) updates[`solucionadoPor.${key}`]=solverName;
+      }
+    }));
+    await db.collection('audits').doc(auditId).update(updates);
+    // 2. Subir fotos pendientes (best-effort)
+    let photoErrors=0;
+    for(const [key,files] of Object.entries(supEvidenceFiles)){
+      for(const file of files){
+        try{
+          const ref=storage.ref(`audits/${auditId}/supervisor/${key}_${Date.now()}_${file.name}`);
+          await uploadFileWithTimeout(ref,file);
+          const url=await ref.getDownloadURL();
+          await db.collection('audits').doc(auditId).update({[`evidencias_supervisor.${key}`]:firebase.firestore.FieldValue.arrayUnion(url)});
+        }catch(_){photoErrors++;}
+      }
+    }
+    // 3. Notificar al auditor
+    await createNotif(auditorId,{
       title:'Auditoría cerrada ✅',
-      body:`Tu auditoría #${currentAudit.id.substring(0,8).toUpperCase()} fue cerrada`,
-      auditId:currentAudit.id, type:'closed'
+      body:`Tu auditoría #${auditId.substring(0,8).toUpperCase()} fue cerrada por el supervisor`,
+      auditId,type:'closed'
     });
-    showToast('✅ Auditoría cerrada','success');
+    Object.keys(supEvidenceFiles).forEach(k=>delete supEvidenceFiles[k]);
     closeAuditModal();
-  }catch(e){btnReset(btn);showToast('Error: '+e.message,'error');}
+    hideLoadingOverlay();
+    showToast('✅ Auditoría cerrada','success');
+    if(photoErrors) showToast(`⚠ ${photoErrors} foto(s) no se pudieron subir`,'error');
+  }catch(e){hideLoadingOverlay();btnReset(btn);showToast('Error: '+e.message,'error');}
 }
 
 async function reopenAudit(auditId){
@@ -2048,11 +2086,11 @@ async function submitGuestAudit(){
     for(const [key,files] of Object.entries(evidenceFiles)){
       for(const file of files){
         try{
-          const path=`audits/${docRef.id}/auditor/${key}_${Date.now()}_${file.name}`;
-          const snap2=await uploadFileWithTimeout(storage.ref(path),file);
-          const url=await snap2.ref.getDownloadURL();
+          const ref=storage.ref(`audits/${docRef.id}/auditor/${key}_${Date.now()}_${file.name}`);
+          await uploadFileWithTimeout(ref,file);
+          const url=await ref.getDownloadURL();
           await db.collection('audits').doc(docRef.id).update({[`evidencias_auditor.${key}`]:firebase.firestore.FieldValue.arrayUnion(url)});
-        }catch(_){}
+        }catch(err){console.error('guestAudit photo err:',err);}
       }
     }
     await db.collection('notifications').add({
@@ -2166,34 +2204,39 @@ async function submitGuestSolution(auditId,solveName){
   try{
     // 1. Guardar soluciones primero (siempre)
     await db.collection('audits').doc(auditId).update(updates);
-    // 2. Auto-cierre si llega a 100%
-    const mergedSol={...(audit.soluciones||{})};
-    Object.entries(updates).forEach(([k,v])=>{if(k.startsWith('soluciones.'))mergedSol[k.slice(10)]=v;});
-    const newScore=calcAuditScore({...audit,soluciones:mergedSol});
-    if(newScore.overall===100&&audit.status!=='closed'){
-      await db.collection('audits').doc(auditId).update({status:'closed',closedAt:firebase.firestore.FieldValue.serverTimestamp()});
-      if(audit.supervisorId){
-        await db.collection('notifications').add({
-          recipientId:audit.supervisorId,
-          title:'🎉 Plan completado al 100%',
-          body:`La auditoría "${audit.area||''}" fue cerrada automáticamente.`,
-          auditId,type:'closed',read:false,
-          createdAt:firebase.firestore.FieldValue.serverTimestamp()
-        });
+    // 2. Auto-cierre si llega a 100% (try/catch independiente para no bloquear el flujo)
+    let autoClosed=false;
+    try{
+      const mergedSol={...(audit.soluciones||{})};
+      Object.entries(updates).forEach(([k,v])=>{if(k.startsWith('soluciones.'))mergedSol[k.slice(10)]=v;});
+      const newScore=calcAuditScore({...audit,soluciones:mergedSol});
+      if(newScore.overall===100&&audit.status!=='closed'){
+        await db.collection('audits').doc(auditId).update({status:'closed',closedAt:firebase.firestore.FieldValue.serverTimestamp()});
+        if(audit.supervisorId){
+          await db.collection('notifications').add({
+            recipientId:audit.supervisorId,
+            title:'🎉 Plan completado al 100%',
+            body:`La auditoría "${audit.area||''}" fue cerrada automáticamente por ${solveName}.`,
+            auditId,type:'closed',read:false,
+            createdAt:firebase.firestore.FieldValue.serverTimestamp()
+          });
+        }
+        autoClosed=true;
       }
-    }
+    }catch(autoErr){console.error('Auto-close error:',autoErr);}
     // 3. Subir fotos como best-effort
     for(const [key,files] of Object.entries(rackSolveFiles)){
       for(const file of files){
         try{
-          const path=`audits/${auditId}/supervisor/${key}_${Date.now()}_${file.name}`;
-          const snap2=await uploadFileWithTimeout(storage.ref(path),file);
-          const url=await snap2.ref.getDownloadURL();
+          const ref=storage.ref(`audits/${auditId}/supervisor/${key}_${Date.now()}_${file.name}`);
+          await uploadFileWithTimeout(ref,file);
+          const url=await ref.getDownloadURL();
           await db.collection('audits').doc(auditId).update({[`evidencias_supervisor.${key}`]:firebase.firestore.FieldValue.arrayUnion(url)});
-        }catch(_){}
+        }catch(err){console.error('rackSolve photo err:',err);}
       }
     }
-    if(audit?.supervisorId){
+    // 4. Notificar supervisor solo si no se auto-cerró (evitar doble notificación)
+    if(!autoClosed&&audit?.supervisorId){
       await db.collection('notifications').add({
         recipientId:audit.supervisorId,
         title:'Solución registrada (Rack)',
