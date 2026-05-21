@@ -1011,9 +1011,10 @@ function previewEvidence(si,ii,input){
 }
 
 // ─── Cámara trasera ───────────────────────────────────
-let _camSi=null, _camIi=null, _camStream=null;
+let _camSi=null, _camIi=null, _camStream=null, _camMode='auditor';
 
 async function startCamera(si,ii){
+  _camMode='auditor';
   _camSi=si; _camIi=ii;
   const modal=document.getElementById('cameraModal');
   modal.style.display='flex';
@@ -1035,13 +1036,15 @@ function capturePhoto(){
   canvas.toBlob(blob=>{
     const file=new File([blob],`foto_s${_camSi}_i${_camIi}_${Date.now()}.jpg`,{type:'image/jpeg'});
     const key=`s${_camSi}_i${_camIi}`;
-    if(!evidenceFiles[key]) evidenceFiles[key]=[];
-    evidenceFiles[key].push(file);
-    const thumbs=document.getElementById(`thumbs-${_camSi}-${_camIi}`);
-    if(thumbs){
-      const img=document.createElement('img');
-      img.src=URL.createObjectURL(file);
-      thumbs.appendChild(img);
+    if(_camMode==='rackSolve'){
+      if(!rackSolveFiles[key]) rackSolveFiles[key]=[];
+      rackSolveFiles[key].push(file);
+      renderThumbsRack(_camSi,_camIi);
+    }else{
+      if(!evidenceFiles[key]) evidenceFiles[key]=[];
+      evidenceFiles[key].push(file);
+      const thumbs=document.getElementById(`thumbs-${_camSi}-${_camIi}`);
+      if(thumbs){const img=document.createElement('img');img.src=URL.createObjectURL(file);thumbs.appendChild(img);}
     }
     stopCamera();
   },'image/jpeg',0.9);
@@ -1053,6 +1056,8 @@ function stopCamera(){
   document.getElementById('cameraVideo').srcObject=null;
   document.getElementById('cameraModal').style.display='none';
 }
+
+function startCameraRack(si,ii){_camMode='rackSolve';startCamera(si,ii);}
 // ──────────────────────────────────────────────────────
 
 async function loadSupervisors(){
@@ -2268,8 +2273,11 @@ function renderSolveForm(audit,name){
         <label>Tu solución</label>
         <textarea id="rsol-${si}-${ii}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#f0fdf4;min-height:60px;outline:none">${solucion}</textarea>
       </div>
-      <label class="evidencia-label" for="rsev-${si}-${ii}">📷 Evidencia (opcional)</label>
-      <input type="file" id="rsev-${si}-${ii}" style="display:none" accept="image/*" multiple onchange="previewRackSolveEv(${si},${ii},this)">
+      <div>
+        <label class="evidencia-label" for="rsev-${si}-${ii}">📎 Subir archivo</label>
+        <input type="file" id="rsev-${si}-${ii}" style="display:none" accept="image/*" multiple onchange="previewRackSolveEv(${si},${ii},this)">
+        <button type="button" class="evidencia-label" style="margin-left:6px" onclick="startCameraRack(${si},${ii})">📸 Tomar foto</button>
+      </div>
       <div class="evidencia-thumbs" id="rsthumbs-${si}-${ii}"></div>
     </div>`;
   }).join('')).join('');
