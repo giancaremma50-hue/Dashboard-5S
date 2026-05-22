@@ -348,6 +348,12 @@ select:focus,input:focus{border-color:var(--primary)}
 .page.active>.card,.page.active>.kpi-grid,.page.active .dash-cedi-card,.page.active .dash-grid,.page.active #dashCalendar{animation:fadeInUp .28s ease both}
 .modal-overlay.open .modal{animation:popIn .2s cubic-bezier(.34,1.56,.64,1) both}
 .toast{animation:fadeInUp .22s ease both}
+/* Validación visual */
+.field-error{border-color:#dc2626!important;box-shadow:0 0 0 3px rgba(220,38,38,.14)!important}
+td.field-error{background:#fff5f5!important;outline:2px solid #dc2626;outline-offset:-2px;border-radius:6px}
+/* Dashboard CEDI liquid glass */
+.dash-cedi-glass{background:linear-gradient(135deg,rgba(255,255,255,.88) 0%,rgba(238,244,255,.93) 100%);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border-radius:24px;padding:40px 28px;border:1.5px solid rgba(255,255,255,.8);box-shadow:0 8px 32px rgba(51,65,120,.10),inset 0 1px 0 rgba(255,255,255,.65);margin-bottom:24px;text-align:center;display:flex;flex-direction:column;align-items:center;transition:box-shadow .22s ease}
+.dash-cedi-glass:hover{box-shadow:0 14px 44px rgba(51,65,120,.15),inset 0 1px 0 rgba(255,255,255,.7)}
 </style>
 </head>
 <body>
@@ -569,10 +575,12 @@ auth.onAuthStateChanged(async user=>{
     initApp();
   } else {
     currentUser=null; currentUserData=null;
-    // Resetear botón de login por si quedó en estado "Ingresando..."
+    // Resetear botón de login y limpiar campos por si quedó en estado "Ingresando..."
     const lb=document.querySelector('[onclick="doLogin()"]');
     if(lb) btnReset(lb);
     document.getElementById('authErr').style.display='none';
+    document.getElementById('authEmail').value='';
+    document.getElementById('authPass').value='';
     // Auto-entrar rack mode si URL lo solicita y no hay sesión
     const params=new URLSearchParams(window.location.search);
     if(params.get('auditor')==='1'){
@@ -981,14 +989,14 @@ function buildCriteriosForm(){
         ${sec.items.map((item,ii)=>`<tr>
           <td style="color:var(--muted);font-weight:700">${ii+1}</td>
           <td style="font-weight:600;line-height:1.4">${item}</td>
-          <td><div class="yn-group">
+          <td id="yn-cell-${si}-${ii}"><div class="yn-group">
             <button class="yn-btn" id="yn-yes-${si}-${ii}" onclick="setYN(${si},${ii},'si')">✓ Sí</button>
             <button class="yn-btn" id="yn-no-${si}-${ii}" onclick="setYN(${si},${ii},'no')">✗ No</button>
           </div></td>
-          <td class="hallazgo-col" id="hallazgo-cell-${si}-${ii}" style="display:none"><textarea id="hallazgo-${si}-${ii}" placeholder="Describe el hallazgo..."></textarea></td>
+          <td class="hallazgo-col" id="hallazgo-cell-${si}-${ii}" style="display:none"><textarea id="hallazgo-${si}-${ii}" placeholder="Describe el hallazgo..." oninput="this.classList.remove('field-error')"></textarea></td>
           <td id="ev-cell-${si}-${ii}" style="display:none">
             <div>
-              <label class="evidencia-label" for="ev-${si}-${ii}">📎 Subir archivo</label>
+              <label class="evidencia-label" id="ev-label-${si}-${ii}" for="ev-${si}-${ii}">📎 Subir archivo</label>
               <input type="file" id="ev-${si}-${ii}" style="display:none" accept="image/*" multiple onchange="previewEvidence(${si},${ii},this)">
               <button type="button" class="evidencia-label" style="margin-left:6px" onclick="startCamera(${si},${ii})">📸 Tomar foto</button>
               <div class="evidencia-thumbs" id="thumbs-${si}-${ii}"></div>
@@ -1005,6 +1013,7 @@ function setYN(si,ii,val){
   ynState[key]=val;
   document.getElementById(`yn-yes-${si}-${ii}`).className='yn-btn'+(val==='si'?' yes-active':'');
   document.getElementById(`yn-no-${si}-${ii}`).className='yn-btn'+(val==='no'?' no-active':'');
+  document.getElementById(`yn-cell-${si}-${ii}`)?.classList.remove('field-error');
   // Mostrar hallazgo y evidencia solo cuando la respuesta es No
   const show=val==='no'?'':'none';
   const hCell=document.getElementById(`hallazgo-cell-${si}-${ii}`);
@@ -1025,6 +1034,7 @@ function previewEvidence(si,ii,input){
   const key=`s${si}_i${ii}`;
   if(!evidenceFiles[key]) evidenceFiles[key]=[];
   Array.from(input.files).forEach(f=>evidenceFiles[key].push(f));
+  document.getElementById(`ev-label-${si}-${ii}`)?.classList.remove('field-error');
   const thumbs=document.getElementById(`thumbs-${si}-${ii}`);
   thumbs.innerHTML='';
   evidenceFiles[key].forEach(f=>{
@@ -1116,29 +1126,34 @@ async function submitFormulario(){
     hallazgos[key]=document.getElementById(`hallazgo-${si}-${ii}`)?.value||'';
     if(ynState[key]==='no') hallazgoSLA[key]=durationH;
   }));
-  // VALIDACIÓN: todos los ítems marcados + hallazgo+foto cuando 'no'
+  // VALIDACIÓN: marcar todos los campos inválidos en rojo, luego scroll al primero
+  document.querySelectorAll('.field-error').forEach(el=>el.classList.remove('field-error'));
+  let firstErr=null, hasErr=false;
   for(let si=0;si<CRITERIOS_5S.length;si++){
     for(let ii=0;ii<CRITERIOS_5S[si].items.length;ii++){
       const key=`s${si}_i${ii}`;
-      const label=`${CRITERIOS_5S[si].s} — Ítem ${ii+1}`;
       if(!ynState[key]){
-        showToast(`Marca Sí o No: ${label}`,'error');
-        document.getElementById(`hallazgo-cell-${si}-${ii}`)?.closest('tr')?.scrollIntoView({behavior:'smooth',block:'center'});
-        return;
-      }
-      if(ynState[key]==='no'){
+        const el=document.getElementById(`yn-cell-${si}-${ii}`);
+        if(el){el.classList.add('field-error');if(!firstErr)firstErr=el;}
+        hasErr=true;
+      } else if(ynState[key]==='no'){
         if(!(hallazgos[key]||'').trim()){
-          showToast(`Detalle del hallazgo requerido: ${label}`,'error');
-          document.getElementById(`hallazgo-${si}-${ii}`)?.scrollIntoView({behavior:'smooth',block:'center'});
-          return;
+          const el=document.getElementById(`hallazgo-${si}-${ii}`);
+          if(el){el.classList.add('field-error');if(!firstErr)firstErr=el;}
+          hasErr=true;
         }
         if(!(evidenceFiles[key]||[]).length){
-          showToast(`Evidencia fotográfica requerida: ${label}`,'error');
-          document.getElementById(`ev-cell-${si}-${ii}`)?.scrollIntoView({behavior:'smooth',block:'center'});
-          return;
+          const el=document.getElementById(`ev-label-${si}-${ii}`);
+          if(el){el.classList.add('field-error');if(!firstErr)firstErr=el;}
+          hasErr=true;
         }
       }
     }
+  }
+  if(hasErr){
+    showToast('Completa los campos marcados en rojo','error');
+    firstErr?.scrollIntoView({behavior:'smooth',block:'center'});
+    return;
   }
   const submitBtn=document.querySelector('[onclick="submitFormulario()"]');
   btnLoad(submitBtn,'⏳ Enviando...');
@@ -1576,6 +1591,8 @@ async function deleteAudit(id){
 
 function closeAuditModal(){
   document.getElementById('auditModal').classList.remove('open');
+  const bc=document.querySelector('#auditModal .btn-close');
+  if(bc) bc.style.display='';
   currentAudit=null;
   Object.keys(supEvidenceFiles).forEach(k=>delete supEvidenceFiles[k]);
 }
@@ -1611,6 +1628,8 @@ function showSDetailModal(si){
     </div>`).join('');
   document.getElementById('auditModalMeta').textContent='';
   document.getElementById('auditModalStatus').textContent='';
+  const bc=document.querySelector('#auditModal .btn-close');
+  if(bc) bc.style.display='none';
   document.getElementById('auditModalTitle').textContent=`${sec.s} — ${sec.nombre}`;
   document.getElementById('auditModalBody').innerHTML=`
     <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Frecuencia de hallazgos (% de veces marcado como "No" en ${audits.length} auditoría${audits.length!==1?'s':''})</p>
@@ -1857,21 +1876,13 @@ function renderDashboard(){
   }).join('');
 
   el.innerHTML=`
-    <p class="dash-section-title">📊 CEDI General</p>
-    <div class="dash-cedi-card">
-      <div class="dash-cedi-gauge">
-        <div class="gauge-wrap" style="width:180px;height:100px">
-          <canvas id="gaugeCedi" width="180" height="100"></canvas>
-          <div class="gauge-label" style="color:${scoreColor(cediOverall)};font-size:28px">${cediOverall}%</div>
-        </div>
+    <div class="dash-cedi-glass">
+      <div style="font-size:11px;font-weight:800;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:20px">📊 Score Global · CEDI El Salvador</div>
+      <div class="gauge-wrap" style="width:240px;height:130px">
+        <canvas id="gaugeCedi" width="240" height="130"></canvas>
+        <div class="gauge-label" style="color:${scoreColor(cediOverall)};font-size:40px;font-weight:900">${cediOverall}%</div>
       </div>
-      <div class="dash-cedi-info">
-        <div class="dash-cedi-score" style="color:${scoreColor(cediOverall)}">${cediOverall}%</div>
-        <div class="dash-cedi-label">Score promedio · ${audits.length} auditoría${audits.length>1?'s':''}</div>
-        <div class="s-chips" style="margin-top:8px">
-          ${CRITERIOS_5S.map((sec,si)=>`<span class="s-chip ${scoreChipClass(perSAvg[si])}" title="${sec.nombre}">${sec.s.substring(0,3)} ${perSAvg[si]!==null?perSAvg[si]+'%':'—'}</span>`).join('')}
-        </div>
-      </div>
+      <div style="font-size:13px;color:var(--muted);margin-top:16px">${audits.length} auditoría${audits.length>1?'s':''} · Todas las áreas</div>
     </div>
 
     <p class="dash-section-title">📋 Incidencias por S</p>
@@ -2329,6 +2340,36 @@ async function submitGuestAudit(){
     hallazgos[key]=document.getElementById(`hallazgo-${si}-${ii}`)?.value||'';
     if(ynState[key]==='no') hallazgoSLA[key]=durationH;
   }));
+
+  // VALIDACIÓN: marcar todos los campos inválidos en rojo, luego scroll al primero
+  document.querySelectorAll('.field-error').forEach(el=>el.classList.remove('field-error'));
+  let gFirstErr=null, gHasErr=false;
+  for(let si=0;si<CRITERIOS_5S.length;si++){
+    for(let ii=0;ii<CRITERIOS_5S[si].items.length;ii++){
+      const key=`s${si}_i${ii}`;
+      if(!ynState[key]){
+        const el=document.getElementById(`yn-cell-${si}-${ii}`);
+        if(el){el.classList.add('field-error');if(!gFirstErr)gFirstErr=el;}
+        gHasErr=true;
+      } else if(ynState[key]==='no'){
+        if(!(hallazgos[key]||'').trim()){
+          const el=document.getElementById(`hallazgo-${si}-${ii}`);
+          if(el){el.classList.add('field-error');if(!gFirstErr)gFirstErr=el;}
+          gHasErr=true;
+        }
+        if(!(evidenceFiles[key]||[]).length){
+          const el=document.getElementById(`ev-label-${si}-${ii}`);
+          if(el){el.classList.add('field-error');if(!gFirstErr)gFirstErr=el;}
+          gHasErr=true;
+        }
+      }
+    }
+  }
+  if(gHasErr){
+    showToast('Completa los campos marcados en rojo','error');
+    gFirstErr?.scrollIntoView({behavior:'smooth',block:'center'});
+    return;
+  }
 
   const auditCode=generateAuditCode();
   const guestBtn=document.querySelector('[onclick="submitGuestAudit()"]');
