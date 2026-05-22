@@ -1839,8 +1839,8 @@ function renderDashboard(){
       <div style="background:var(--soft);border-radius:8px;height:6px;margin-bottom:10px;overflow:hidden">
         <div style="width:${score||0}%;background:${scoreColor(score)};height:100%;border-radius:8px"></div>
       </div>
-      <div style="font-size:10px;color:var(--muted)">Mayor incidencia:</div>
-      <div style="font-size:11px;font-weight:600;color:var(--red);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${topItem&&topItem.total?`${topItem.item} · ${topItem.pct}% No`:'Sin datos'}</div>
+      <div style="font-size:10px;color:var(--muted)">${topItem&&topItem.pct>0?'Mayor incidencia:':'Estado:'}</div>
+      <div style="font-size:11px;font-weight:600;color:${topItem&&topItem.pct>0?'var(--red)':'var(--green)'};margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${topItem&&topItem.total?(topItem.pct>0?`${topItem.item} · ${topItem.pct}% No`:'✓ Sin hallazgos'):'Sin datos'}</div>
       <div style="font-size:10px;color:var(--muted);margin-top:6px">Ver desglose →</div>
     </div>`;
   }).join('');
