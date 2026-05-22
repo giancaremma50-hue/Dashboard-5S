@@ -351,6 +351,8 @@ select:focus,input:focus{border-color:var(--primary)}
 /* Validación visual */
 .field-error{border-color:#dc2626!important;box-shadow:0 0 0 3px rgba(220,38,38,.14)!important}
 td.field-error{background:#fff5f5!important;outline:2px solid #dc2626;outline-offset:-2px;border-radius:6px}
+/* Ocultar siempre el botón ✕ del audit modal — se usa solo el botón Cerrar del footer */
+#auditModal .btn-close{display:none!important}
 /* Dashboard CEDI liquid glass */
 .dash-cedi-glass{background:linear-gradient(135deg,rgba(255,255,255,.88) 0%,rgba(238,244,255,.93) 100%);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border-radius:24px;padding:40px 28px;border:1.5px solid rgba(255,255,255,.8);box-shadow:0 8px 32px rgba(51,65,120,.10),inset 0 1px 0 rgba(255,255,255,.65);margin-bottom:24px;text-align:center;display:flex;flex-direction:column;align-items:center;transition:box-shadow .22s ease}
 .dash-cedi-glass:hover{box-shadow:0 14px 44px rgba(51,65,120,.15),inset 0 1px 0 rgba(255,255,255,.7)}
@@ -1270,8 +1272,8 @@ async function openAuditModal(auditId){
       if(val==='si'){
         solCol='<td style="color:var(--muted);font-size:11px;text-align:center">—</td><td style="color:var(--muted);font-size:11px;text-align:center">—</td>';
       } else if(canSolve){
-        solCol=`<td class="solucion-col"><textarea id="sol-${si}-${ii}" placeholder="Detalle de la solución...">${solucion}</textarea>${solverTag}</td>
-           <td><label class="evidencia-label" for="sev-${si}-${ii}">📷 Evidencia</label>
+        solCol=`<td class="solucion-col"><textarea id="sol-${si}-${ii}" placeholder="Detalle de la solución..." oninput="this.classList.remove('field-error')">${solucion}</textarea>${solverTag}</td>
+           <td><label class="evidencia-label" id="sev-label-${si}-${ii}" for="sev-${si}-${ii}">📷 Evidencia</label>
            <input type="file" id="sev-${si}-${ii}" style="display:none" accept="image/*" multiple onchange="previewSupEv(${si},${ii},this)">
            <div class="evidencia-thumbs" id="sthumbs-${si}-${ii}">${evShtml}</div></td>`;
       } else {
@@ -1344,7 +1346,7 @@ async function openAuditModal(auditId){
   if(role==='admin'){
     footer+=`<button class="btn btn-danger btn-sm" onclick="deleteAudit('${audit.id}')">🗑 Eliminar</button>`;
   }
-  footer+=`<button class="btn btn-sm" onclick="closeAuditModal()">Cerrar</button>`;
+  footer+=`<button class="btn btn-sm" onclick="closeAuditModal()" style="background:#dc2626;color:#fff;border-color:#dc2626">Cerrar</button>`;
   document.getElementById('auditModalFooter').innerHTML=footer;
   document.getElementById('auditModal').classList.add('open');
 }
@@ -1353,6 +1355,7 @@ function previewSupEv(si,ii,input){
   const key=`s${si}_i${ii}`;
   if(!supEvidenceFiles[key]) supEvidenceFiles[key]=[];
   if(input) Array.from(input.files).forEach(f=>supEvidenceFiles[key].push(f));
+  document.getElementById(`sev-label-${si}-${ii}`)?.classList.remove('field-error');
   renderThumbsSup(si,ii);
 }
 function renderThumbsSup(si,ii){
@@ -1388,7 +1391,9 @@ async function saveProgress(){
   const saveBtn=document.querySelector('[onclick="saveProgress()"]');
   btnLoad(saveBtn,'⏳ Guardando...');
   const solverName=currentUserData?.name||currentUserData?.email||'Supervisor';
-  // VALIDACIÓN: si registra solución, debe tener texto + foto
+  // VALIDACIÓN: si empieza a llenar un ítem, debe tener texto + foto — marcar todos a la vez
+  document.querySelectorAll('.field-error').forEach(el=>el.classList.remove('field-error'));
+  let spFirstErr=null, spHasErr=false;
   for(let si=0;si<CRITERIOS_5S.length;si++){
     for(let ii=0;ii<CRITERIOS_5S[si].items.length;ii++){
       const key=`s${si}_i${ii}`;
@@ -1396,12 +1401,20 @@ async function saveProgress(){
       if((currentAudit.soluciones?.[key]||'').trim()) continue;
       const text=(document.getElementById(`sol-${si}-${ii}`)?.value||'').trim();
       const files=supEvidenceFiles[key]||[];
-      if(!text&&!files.length) continue;
-      const label=`${CRITERIOS_5S[si].s} — Ítem ${ii+1}`;
-      if(!text){showToast(`Detalle de solución requerido: ${label}`,'error');btnReset(saveBtn);return;}
-      if(!files.length){showToast(`Evidencia fotográfica requerida: ${label}`,'error');btnReset(saveBtn);return;}
+      if(!text&&!files.length) continue; // en blanco — OK parcial
+      if(!text){
+        const el=document.getElementById(`sol-${si}-${ii}`);
+        if(el){el.classList.add('field-error');if(!spFirstErr)spFirstErr=el;}
+        spHasErr=true;
+      }
+      if(!files.length){
+        const el=document.getElementById(`sev-label-${si}-${ii}`);
+        if(el){el.classList.add('field-error');if(!spFirstErr)spFirstErr=el;}
+        spHasErr=true;
+      }
     }
   }
+  if(spHasErr){showToast('Completa los campos marcados en rojo','error');spFirstErr?.scrollIntoView({behavior:'smooth',block:'center'});btnReset(saveBtn);return;}
   const updates={status:'inprog',updatedAt:firebase.firestore.FieldValue.serverTimestamp(),lastSolvedBy:solverName};
   CRITERIOS_5S.forEach((sec,si)=>sec.items.forEach((_,ii)=>{
     const key=`s${si}_i${ii}`;
@@ -1458,6 +1471,36 @@ async function saveProgress(){
 
 async function closeAuditAction(){
   if(!currentAudit) return;
+  // VALIDACIÓN ESTRICTA: todos los ítems 'no' deben tener solución (texto + foto) antes de cerrar
+  document.querySelectorAll('.field-error').forEach(el=>el.classList.remove('field-error'));
+  let caFirstErr=null, caHasErr=false;
+  for(let si=0;si<CRITERIOS_5S.length;si++){
+    for(let ii=0;ii<CRITERIOS_5S[si].items.length;ii++){
+      const key=`s${si}_i${ii}`;
+      if(currentAudit.criterios?.[key]!=='no') continue;
+      const savedText=(currentAudit.soluciones?.[key]||'').trim();
+      const formText=(document.getElementById(`sol-${si}-${ii}`)?.value||'').trim();
+      const hasText=!!(savedText||formText);
+      const savedPhotos=(currentAudit.evidencias_supervisor?.[key]||[]).length>0;
+      const newPhotos=(supEvidenceFiles[key]||[]).length>0;
+      const hasPhoto=savedPhotos||newPhotos;
+      if(!hasText){
+        const el=document.getElementById(`sol-${si}-${ii}`);
+        if(el){el.classList.add('field-error');if(!caFirstErr)caFirstErr=el;}
+        caHasErr=true;
+      }
+      if(!hasPhoto){
+        const el=document.getElementById(`sev-label-${si}-${ii}`);
+        if(el){el.classList.add('field-error');if(!caFirstErr)caFirstErr=el;}
+        caHasErr=true;
+      }
+    }
+  }
+  if(caHasErr){
+    showToast('Completa todos los campos obligatorios antes de cerrar','error');
+    caFirstErr?.scrollIntoView({behavior:'smooth',block:'center'});
+    return;
+  }
   const btn=document.querySelector('[onclick="closeAuditAction()"]');
   btnLoad(btn,'⏳ Cerrando...');
   showLoadingOverlay('Cerrando plan...');
@@ -1591,8 +1634,6 @@ async function deleteAudit(id){
 
 function closeAuditModal(){
   document.getElementById('auditModal').classList.remove('open');
-  const bc=document.querySelector('#auditModal .btn-close');
-  if(bc) bc.style.display='';
   currentAudit=null;
   Object.keys(supEvidenceFiles).forEach(k=>delete supEvidenceFiles[k]);
 }
@@ -1628,8 +1669,6 @@ function showSDetailModal(si){
     </div>`).join('');
   document.getElementById('auditModalMeta').textContent='';
   document.getElementById('auditModalStatus').textContent='';
-  const bc=document.querySelector('#auditModal .btn-close');
-  if(bc) bc.style.display='none';
   document.getElementById('auditModalTitle').textContent=`${sec.s} — ${sec.nombre}`;
   document.getElementById('auditModalBody').innerHTML=`
     <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Frecuencia de hallazgos (% de veces marcado como "No" en ${audits.length} auditoría${audits.length!==1?'s':''})</p>
