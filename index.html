@@ -259,7 +259,7 @@ select:focus,input:focus{border-color:var(--primary)}
 }
 
 /* RACK SCREEN */
-#rackScreen{display:none;align-items:center;justify-content:center;min-height:100vh;background:var(--primary);padding:24px;flex-direction:column}
+#rackScreen{display:none;position:fixed;inset:0;z-index:100;overflow-y:auto;align-items:center;justify-content:center;min-height:100vh;background:var(--primary);padding:24px;flex-direction:column}
 .rack-box{background:#fff;border-radius:20px;padding:36px 32px;width:100%;max-width:600px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
 .rack-box-wide{max-width:900px;max-height:88vh;overflow-y:auto}
 .rack-home-btns{display:flex;flex-direction:column;gap:12px;margin-top:22px}
@@ -569,6 +569,10 @@ auth.onAuthStateChanged(async user=>{
     initApp();
   } else {
     currentUser=null; currentUserData=null;
+    // Resetear botón de login por si quedó en estado "Ingresando..."
+    const lb=document.querySelector('[onclick="doLogin()"]');
+    if(lb) btnReset(lb);
+    document.getElementById('authErr').style.display='none';
     // Auto-entrar rack mode si URL lo solicita y no hay sesión
     const params=new URLSearchParams(window.location.search);
     if(params.get('auditor')==='1'){
@@ -1117,10 +1121,22 @@ async function submitFormulario(){
     for(let ii=0;ii<CRITERIOS_5S[si].items.length;ii++){
       const key=`s${si}_i${ii}`;
       const label=`${CRITERIOS_5S[si].s} — Ítem ${ii+1}`;
-      if(!ynState[key]){showToast(`Marca Sí o No: ${label}`,'error');return;}
+      if(!ynState[key]){
+        showToast(`Marca Sí o No: ${label}`,'error');
+        document.getElementById(`hallazgo-cell-${si}-${ii}`)?.closest('tr')?.scrollIntoView({behavior:'smooth',block:'center'});
+        return;
+      }
       if(ynState[key]==='no'){
-        if(!(hallazgos[key]||'').trim()){showToast(`Detalle del hallazgo requerido: ${label}`,'error');return;}
-        if(!(evidenceFiles[key]||[]).length){showToast(`Evidencia fotográfica requerida: ${label}`,'error');return;}
+        if(!(hallazgos[key]||'').trim()){
+          showToast(`Detalle del hallazgo requerido: ${label}`,'error');
+          document.getElementById(`hallazgo-${si}-${ii}`)?.scrollIntoView({behavior:'smooth',block:'center'});
+          return;
+        }
+        if(!(evidenceFiles[key]||[]).length){
+          showToast(`Evidencia fotográfica requerida: ${label}`,'error');
+          document.getElementById(`ev-cell-${si}-${ii}`)?.scrollIntoView({behavior:'smooth',block:'center'});
+          return;
+        }
       }
     }
   }
@@ -1593,12 +1609,14 @@ function showSDetailModal(si){
       <div style="font-size:12px;font-weight:700;color:${pct>=50?'var(--red)':'var(--green)'};min-width:34px;text-align:right">${pct}%</div>
       <div style="font-size:11px;color:var(--muted);min-width:46px;text-align:right">${noCount}/${total}</div>
     </div>`).join('');
+  document.getElementById('auditModalMeta').textContent='';
+  document.getElementById('auditModalStatus').textContent='';
   document.getElementById('auditModalTitle').textContent=`${sec.s} — ${sec.nombre}`;
   document.getElementById('auditModalBody').innerHTML=`
     <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Frecuencia de hallazgos (% de veces marcado como "No" en ${audits.length} auditoría${audits.length!==1?'s':''})</p>
     ${rows}`;
-  document.getElementById('auditModalFooter').innerHTML='<button class="btn" onclick="closeAuditModal()">Cerrar</button>';
-  document.getElementById('auditModal').style.display='flex';
+  document.getElementById('auditModalFooter').innerHTML='<button class="btn" onclick="closeAuditModal()" style="background:#dc2626;color:#fff;border-color:#dc2626">Cerrar</button>';
+  document.getElementById('auditModal').classList.add('open');
 }
 
 function calcAuditScore(audit){
