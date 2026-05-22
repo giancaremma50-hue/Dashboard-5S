@@ -238,7 +238,25 @@ select:focus,input:focus{border-color:var(--primary)}
 @keyframes slideDown{to{opacity:0;transform:translateY(8px)}}
 @media(max-width:1100px){.kanban-board{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:900px){.kanban-board{grid-template-columns:1fr 1fr}.dash-grid{grid-template-columns:1fr}}
-@media(max-width:640px){.kanban-board{grid-template-columns:1fr}.sidebar{display:none}.main{margin-left:0}.audit-header-grid{grid-template-columns:1fr}}
+@media(max-width:768px){.sidebar{width:180px}.main{margin-left:180px;padding:16px}.topbar h1{font-size:17px}}
+@media(max-width:640px){
+  .kanban-board{grid-template-columns:1fr}
+  .sidebar{display:none}.main{margin-left:0;padding:14px}
+  .audit-header-grid{grid-template-columns:1fr}
+  /* Tabla de criterios: colapsar en bloques apilados */
+  .criteria-table thead{display:none}
+  .criteria-table tr{display:block;border:1px solid var(--border);border-radius:12px;margin-bottom:10px;padding:10px;background:var(--surface)}
+  .criteria-table td{display:block;border:none;padding:4px 0}
+  .criteria-table td:first-child{font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase}
+  .yn-group{margin-top:4px}
+  /* Modal full-screen en móvil */
+  .audit-modal-inner{width:100vw;max-width:100vw;border-radius:0;max-height:100dvh;height:100dvh}
+  /* Filtros en columna */
+  .filter-row{flex-direction:column;align-items:stretch}
+  .filter-row select,.filter-row input[type=text]{width:100%}
+  /* S-overview cards una columna */
+  .s-overview-card{min-width:0}
+}
 
 /* RACK SCREEN */
 #rackScreen{display:none;align-items:center;justify-content:center;min-height:100vh;background:var(--primary);padding:24px;flex-direction:column}
@@ -284,6 +302,7 @@ select:focus,input:focus{border-color:var(--primary)}
 .s-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:12px}
 .s-chip{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;color:#fff}
 .s-chip-green{background:#16a34a}.s-chip-amber{background:#d97706}.s-chip-red{background:#dc2626}.s-chip-gray{background:#94a3b8}
+.s-overview-card{transition:transform .18s,box-shadow .18s}.s-overview-card:hover{transform:translateY(-3px);box-shadow:var(--shadow-md)}
 .cal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
 .cal-month-label{font-size:13px;font-weight:800}
 .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
@@ -1013,8 +1032,8 @@ function previewEvidence(si,ii,input){
 // ─── Cámara trasera ───────────────────────────────────
 let _camSi=null, _camIi=null, _camStream=null, _camMode='auditor';
 
-async function startCamera(si,ii){
-  _camMode='auditor';
+async function startCamera(si,ii,mode='auditor'){
+  _camMode=mode;
   _camSi=si; _camIi=ii;
   const modal=document.getElementById('cameraModal');
   modal.style.display='flex';
@@ -1057,7 +1076,7 @@ function stopCamera(){
   document.getElementById('cameraModal').style.display='none';
 }
 
-function startCameraRack(si,ii){_camMode='rackSolve';startCamera(si,ii);}
+function startCameraRack(si,ii){startCamera(si,ii,'rackSolve');}
 // ──────────────────────────────────────────────────────
 
 async function loadSupervisors(){
@@ -1093,6 +1112,18 @@ async function submitFormulario(){
     hallazgos[key]=document.getElementById(`hallazgo-${si}-${ii}`)?.value||'';
     if(ynState[key]==='no') hallazgoSLA[key]=durationH;
   }));
+  // VALIDACIÓN: todos los ítems marcados + hallazgo+foto cuando 'no'
+  for(let si=0;si<CRITERIOS_5S.length;si++){
+    for(let ii=0;ii<CRITERIOS_5S[si].items.length;ii++){
+      const key=`s${si}_i${ii}`;
+      const label=`${CRITERIOS_5S[si].s} — Ítem ${ii+1}`;
+      if(!ynState[key]){showToast(`Marca Sí o No: ${label}`,'error');return;}
+      if(ynState[key]==='no'){
+        if(!(hallazgos[key]||'').trim()){showToast(`Detalle del hallazgo requerido: ${label}`,'error');return;}
+        if(!(evidenceFiles[key]||[]).length){showToast(`Evidencia fotográfica requerida: ${label}`,'error');return;}
+      }
+    }
+  }
   const submitBtn=document.querySelector('[onclick="submitFormulario()"]');
   btnLoad(submitBtn,'⏳ Enviando...');
   showLoadingOverlay('Guardando auditoría...');
@@ -1326,6 +1357,20 @@ async function saveProgress(){
   const saveBtn=document.querySelector('[onclick="saveProgress()"]');
   btnLoad(saveBtn,'⏳ Guardando...');
   const solverName=currentUserData?.name||currentUserData?.email||'Supervisor';
+  // VALIDACIÓN: si registra solución, debe tener texto + foto
+  for(let si=0;si<CRITERIOS_5S.length;si++){
+    for(let ii=0;ii<CRITERIOS_5S[si].items.length;ii++){
+      const key=`s${si}_i${ii}`;
+      if(currentAudit.criterios?.[key]!=='no') continue;
+      if((currentAudit.soluciones?.[key]||'').trim()) continue;
+      const text=(document.getElementById(`sol-${si}-${ii}`)?.value||'').trim();
+      const files=supEvidenceFiles[key]||[];
+      if(!text&&!files.length) continue;
+      const label=`${CRITERIOS_5S[si].s} — Ítem ${ii+1}`;
+      if(!text){showToast(`Detalle de solución requerido: ${label}`,'error');btnReset(saveBtn);return;}
+      if(!files.length){showToast(`Evidencia fotográfica requerida: ${label}`,'error');btnReset(saveBtn);return;}
+    }
+  }
   const updates={status:'inprog',updatedAt:firebase.firestore.FieldValue.serverTimestamp(),lastSolvedBy:solverName};
   CRITERIOS_5S.forEach((sec,si)=>sec.items.forEach((_,ii)=>{
     const key=`s${si}_i${ii}`;
@@ -1524,6 +1569,38 @@ function closeAuditModal(){
 // DASHBOARD
 // ═══════════════════════════════════════
 // ─── DASHBOARD HELPERS ────────────────────────────────────────────
+function calcSIncidence(si){
+  return CRITERIOS_5S[si].items.map((item,ii)=>{
+    const key=`s${si}_i${ii}`;
+    let noCount=0,total=0;
+    audits.forEach(a=>{
+      const v=a.criterios?.[key];
+      if(v==='si'||v==='no'){total++;if(v==='no')noCount++;}
+    });
+    return {item,ii,noCount,total,pct:total?Math.round(noCount/total*100):0};
+  }).sort((a,b)=>b.pct-a.pct);
+}
+
+function showSDetailModal(si){
+  const sec=CRITERIOS_5S[si];
+  const items=calcSIncidence(si);
+  const rows=items.map(({item,noCount,total,pct})=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div style="flex:1;font-size:13px">${item}</div>
+      <div style="width:90px;background:var(--soft);border-radius:6px;height:8px;overflow:hidden;flex-shrink:0">
+        <div style="width:${pct}%;background:${pct>=50?'var(--red)':'var(--green)'};height:100%;border-radius:6px"></div>
+      </div>
+      <div style="font-size:12px;font-weight:700;color:${pct>=50?'var(--red)':'var(--green)'};min-width:34px;text-align:right">${pct}%</div>
+      <div style="font-size:11px;color:var(--muted);min-width:46px;text-align:right">${noCount}/${total}</div>
+    </div>`).join('');
+  document.getElementById('auditModalTitle').textContent=`${sec.s} — ${sec.nombre}`;
+  document.getElementById('auditModalBody').innerHTML=`
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Frecuencia de hallazgos (% de veces marcado como "No" en ${audits.length} auditoría${audits.length!==1?'s':''})</p>
+    ${rows}`;
+  document.getElementById('auditModalFooter').innerHTML='<button class="btn" onclick="closeAuditModal()">Cerrar</button>';
+  document.getElementById('auditModal').style.display='flex';
+}
+
 function calcAuditScore(audit){
   const perS=CRITERIOS_5S.map((sec,si)=>{
     let sum=0,count=0;
@@ -1710,6 +1787,57 @@ function renderDashboard(){
       </div>
     </div>`).join('');
 
+  // S-cards: incidencias por S
+  const sCardsHtml=CRITERIOS_5S.map((sec,si)=>{
+    const score=perSAvg[si];
+    const topItem=calcSIncidence(si)[0];
+    return `<div class="dash-card s-overview-card" onclick="showSDetailModal(${si})" style="cursor:pointer">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+        <div>
+          <div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">${sec.s}</div>
+          <div style="font-size:12px;font-weight:700;margin-top:2px;line-height:1.3">${sec.nombre}</div>
+        </div>
+        <div style="font-size:20px;font-weight:900;color:${scoreColor(score)};flex-shrink:0;margin-left:8px">${score!==null?score+'%':'—'}</div>
+      </div>
+      <div style="background:var(--soft);border-radius:8px;height:6px;margin-bottom:10px;overflow:hidden">
+        <div style="width:${score||0}%;background:${scoreColor(score)};height:100%;border-radius:8px"></div>
+      </div>
+      <div style="font-size:10px;color:var(--muted)">Mayor incidencia:</div>
+      <div style="font-size:11px;font-weight:600;color:var(--red);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${topItem&&topItem.total?`${topItem.item} · ${topItem.pct}% No`:'Sin datos'}</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:6px">Ver desglose →</div>
+    </div>`;
+  }).join('');
+
+  // Ranking de áreas
+  const rankingData=AREAS.map(area=>{
+    const aAudits=audits.filter(a=>a.area===area);
+    if(!aAudits.length) return {area,score:null,count:0};
+    const scores=aAudits.map(a=>calcAuditScore(a).overall).filter(s=>s!==null);
+    const avg=scores.length?Math.round(scores.reduce((a,b)=>a+b,0)/scores.length):null;
+    return {area,score:avg,count:aAudits.length};
+  }).sort((a,b)=>{
+    if(a.score===null&&b.score===null) return 0;
+    if(a.score===null) return 1;
+    if(b.score===null) return -1;
+    return b.score-a.score;
+  });
+  const MEDALS=['🥇','🥈','🥉'];
+  const medalBg=['#fffbeb','#f8f8f8','#fdf6f0'];
+  const medalBorder=['#b8860b','#808080','#8b5e3c'];
+  const rankRows=rankingData.map(({area,score,count},idx)=>{
+    const hasMedal=idx<3&&score!==null;
+    const pos=hasMedal?MEDALS[idx]:`<span style="color:var(--muted);font-weight:700;font-size:12px">${idx+1}</span>`;
+    const rowStyle=hasMedal?`background:${medalBg[idx]};border-left:3px solid ${medalBorder[idx]}`:'';
+    return `<tr style="${rowStyle}">
+      <td style="padding:9px 12px;width:40px;text-align:center;font-size:16px">${pos}</td>
+      <td style="padding:9px 12px;font-size:13px;font-weight:700">${area}</td>
+      <td style="padding:9px 12px;font-size:13px;font-weight:800;color:${score!==null?scoreColor(score):'var(--muted)'}">
+        ${score!==null?score+'%':'—'}
+      </td>
+      <td style="padding:9px 12px;font-size:11px;color:var(--muted)">${count} plan${count!==1?'es':''}</td>
+    </tr>`;
+  }).join('');
+
   el.innerHTML=`
     <p class="dash-section-title">📊 CEDI General</p>
     <div class="dash-cedi-card">
@@ -1726,6 +1854,24 @@ function renderDashboard(){
           ${CRITERIOS_5S.map((sec,si)=>`<span class="s-chip ${scoreChipClass(perSAvg[si])}" title="${sec.nombre}">${sec.s.substring(0,3)} ${perSAvg[si]!==null?perSAvg[si]+'%':'—'}</span>`).join('')}
         </div>
       </div>
+    </div>
+
+    <p class="dash-section-title">📋 Incidencias por S</p>
+    <div class="dash-grid" style="grid-template-columns:repeat(auto-fill,minmax(190px,1fr))">${sCardsHtml}</div>
+
+    <p class="dash-section-title">🏆 Ranking de áreas</p>
+    <div class="card" style="padding:0;overflow:hidden;margin-bottom:20px">
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="background:var(--soft)">
+            <th style="padding:8px 12px;font-size:10px;color:var(--muted);text-align:center;font-weight:700;text-transform:uppercase;letter-spacing:.4px">#</th>
+            <th style="padding:8px 12px;font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.4px">Área</th>
+            <th style="padding:8px 12px;font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.4px">Promedio</th>
+            <th style="padding:8px 12px;font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.4px">Planes</th>
+          </tr>
+        </thead>
+        <tbody>${rankRows}</tbody>
+      </table>
     </div>
 
     <p class="dash-section-title">🏭 Por área / rack</p>
@@ -2303,6 +2449,20 @@ async function submitGuestSolution(auditId,solveName){
     '¿Deseas confirmar y guardar?'
   );
   if(!confirmed) return;
+  // VALIDACIÓN: ítems pendientes con inicio de solución deben tener texto + foto
+  for(let si=0;si<CRITERIOS_5S.length;si++){
+    for(let ii=0;ii<CRITERIOS_5S[si].items.length;ii++){
+      const key=`s${si}_i${ii}`;
+      if(audit.criterios?.[key]!=='no') continue;
+      if((audit.soluciones?.[key]||'').trim()) continue;
+      const text=(document.getElementById(`rsol-${si}-${ii}`)?.value||'').trim();
+      const files=rackSolveFiles[key]||[];
+      if(!text&&!files.length) continue;
+      const label=`${CRITERIOS_5S[si].s} — Ítem ${ii+1}`;
+      if(!text){showToast(`Detalle de solución requerido: ${label}`,'error');return;}
+      if(!files.length){showToast(`Evidencia fotográfica requerida: ${label}`,'error');return;}
+    }
+  }
   const saveBtn=document.querySelector('[onclick*="submitGuestSolution"]');
   btnLoad(saveBtn,'⏳ Guardando...');
   // Solo mover a 'inprog' si estaba en pending; si ya está en inprog lo deja igual
