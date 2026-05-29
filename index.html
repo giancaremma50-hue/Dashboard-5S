@@ -438,6 +438,7 @@ td.field-error{background:#fff5f5!important;outline:2px solid #dc2626;outline-of
     <div id="pageFormulario" class="page"></div>
     <div id="pageDashboard" class="page"></div>
     <div id="pageUsuarios" class="page"></div>
+    <div id="pageConfig" class="page"></div>
   </div>
 </div>
 
@@ -514,7 +515,7 @@ const AREAS = [
   'Grifería','Pasillo 2','Pasillo 3','Pasillo 4','Pasillo 5','Pasillo 6','Pasillo 7'
 ];
 
-const CRITERIOS_5S = [
+let CRITERIOS_5S = [
   { s:'1ª S', nombre:'Separar y eliminar innecesarios', items:[
     'Un solo SKU en cada posición de rack',
     'Evitar reubicar en ubicaciones rack tarimas dañadas',
@@ -628,10 +629,10 @@ async function loadUserData(uid){
 // ═══════════════════════════════════════
 // APP INIT
 // ═══════════════════════════════════════
-function initApp(){
+async function initApp(){
   document.getElementById('authScreen').style.display='none';
   document.getElementById('app').style.display='block';
-  updateSidebar(); buildNav(); subscribeData(); navigateTo('kanban');
+  updateSidebar(); buildNav(); await loadFormConfig(); subscribeData(); navigateTo('kanban');
 }
 
 function updateSidebar(){
@@ -659,6 +660,7 @@ function buildNav(){
     items.push({id:'dashboard',icon:'📊',label:'Dashboard'});
     items.push({id:'formulario',icon:'📋',label:'Nueva Auditoría'});
     items.push({id:'usuarios',icon:'👥',label:'Usuarios'});
+    items.push({id:'config',icon:'⚙️',label:'Configuración'});
   }
   document.getElementById('mainNav').innerHTML=items.map(i=>`
     <div class="nav-item" id="nav-${i.id}" onclick="navigateTo('${i.id}')">
@@ -678,6 +680,7 @@ function navigateTo(page){
     case 'formulario': renderFormulario(); document.getElementById('pageFormulario').classList.add('active'); break;
     case 'dashboard': document.getElementById('pageDashboard').classList.add('active'); renderDashboard(); break;
     case 'usuarios': renderUsuarios(); document.getElementById('pageUsuarios').classList.add('active'); break;
+    case 'config': renderConfig(); document.getElementById('pageConfig').classList.add('active'); break;
   }
 }
 
@@ -1122,7 +1125,7 @@ async function submitFormulario(){
   if(!supervisorId){showToast('Selecciona un supervisor','error');return;}
   const sup=users.find(u=>u.id===supervisorId);
   const criterios={}, hallazgos={}, hallazgoSLA={};
-  CRITERIOS_5S.forEach((sec,si)=>sec.items.forEach((_,ii)=>{
+  ((typeof a !== 'undefined' && a.formSnapshot) ? a.formSnapshot : (typeof audit !== 'undefined' && audit.formSnapshot ? audit.formSnapshot : CRITERIOS_5S)).forEach((sec,si)=>sec.items.forEach((_,ii)=>{
     const key=`s${si}_i${ii}`;
     criterios[key]=ynState[key]||null;
     hallazgos[key]=document.getElementById(`hallazgo-${si}-${ii}`)?.value||'';
@@ -1161,9 +1164,12 @@ async function submitFormulario(){
   btnLoad(submitBtn,'⏳ Enviando...');
   showLoadingOverlay('Guardando auditoría...');
   try{
+    window._tempAuditCode = generateAuditCode();
     const docRef=await db.collection('audits').add({
       area, obs, criterios, hallazgos, hallazgoSLA,
       status:'pending',
+      auditCode: window._tempAuditCode,
+      formSnapshot: CRITERIOS_5S,
       auditorId:currentUser.uid,
       auditorName:currentUserData.name||currentUserData.email,
       supervisorId,
@@ -1235,7 +1241,7 @@ async function openAuditModal(auditId){
 
   let body='';
   // Código rack visible para supervisor/admin
-  if(audit.guestAudit&&audit.auditCode&&role!=='operador'){
+  if(audit.auditCode){
     body+=`<div class="rack-code-banner">
       <div>
         <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:2px">Código de acceso rack</div>
@@ -1248,7 +1254,7 @@ async function openAuditModal(auditId){
     <span><strong>Observaciones:</strong> ${audit.obs||'—'}</span>
     ${audit.lastSolvedBy?`<span style="color:#16a34a"><strong>✅ Solucionado por:</strong> ${audit.lastSolvedBy} · <span style="font-family:monospace;font-size:11px">#${audit.id.substring(0,8).toUpperCase()}</span></span>`:''}
   </div>`;
-  body+=CRITERIOS_5S.map((sec,si)=>{
+  body+=(audit.formSnapshot || CRITERIOS_5S).map((sec,si)=>{
     const yes=sec.items.filter((_,ii)=>audit.criterios?.[`s${si}_i${ii}`]==='si').length;
     const pct=Math.round(yes/sec.items.length*100);
     const rows=sec.items.map((item,ii)=>{
@@ -1416,7 +1422,7 @@ async function saveProgress(){
   }
   if(spHasErr){showToast('Completa los campos marcados en rojo','error');spFirstErr?.scrollIntoView({behavior:'smooth',block:'center'});btnReset(saveBtn);return;}
   const updates={status:'inprog',updatedAt:firebase.firestore.FieldValue.serverTimestamp(),lastSolvedBy:solverName};
-  CRITERIOS_5S.forEach((sec,si)=>sec.items.forEach((_,ii)=>{
+  ((typeof a !== 'undefined' && a.formSnapshot) ? a.formSnapshot : (typeof audit !== 'undefined' && audit.formSnapshot ? audit.formSnapshot : CRITERIOS_5S)).forEach((sec,si)=>sec.items.forEach((_,ii)=>{
     const key=`s${si}_i${ii}`;
     const el=document.getElementById(`sol-${si}-${ii}`);
     if(el){
@@ -1516,7 +1522,7 @@ async function closeAuditAction(){
       updatedAt:firebase.firestore.FieldValue.serverTimestamp(),
       lastSolvedBy:solverName
     };
-    CRITERIOS_5S.forEach((sec,si)=>sec.items.forEach((_,ii)=>{
+    ((typeof a !== 'undefined' && a.formSnapshot) ? a.formSnapshot : (typeof audit !== 'undefined' && audit.formSnapshot ? audit.formSnapshot : CRITERIOS_5S)).forEach((sec,si)=>sec.items.forEach((_,ii)=>{
       const key=`s${si}_i${ii}`;
       const el=document.getElementById(`sol-${si}-${ii}`);
       if(el){
@@ -1678,7 +1684,8 @@ function showSDetailModal(si){
 }
 
 function calcAuditScore(audit){
-  const perS=CRITERIOS_5S.map((sec,si)=>{
+  const criteria = audit.formSnapshot || CRITERIOS_5S;
+  const perS=criteria.map((sec,si)=>{
     let sum=0,count=0;
     sec.items.forEach((_,ii)=>{
       const key=`s${si}_i${ii}`;
@@ -1976,6 +1983,86 @@ function renderDashboard(){
   areaCards.forEach(({gaugeId,overall})=>makeGauge(gaugeId,overall));
   setTimeout(renderTrendChart,0);
 
+}
+
+
+async function loadFormConfig() {
+  try {
+    const doc = await db.collection('settings').doc('form').get();
+    if (doc.exists && doc.data().criterios) {
+      CRITERIOS_5S = doc.data().criterios;
+    }
+  } catch(e) { console.error('Error cargando config form', e); }
+}
+
+let tempFormConfig = [];
+function renderConfig() {
+  const el = document.getElementById('pageConfig');
+  if (currentUserData.role !== 'admin') { el.innerHTML = '<div class="card"><p>Sin acceso</p></div>'; return; }
+  
+  // Clone for editing
+  if (!tempFormConfig.length) tempFormConfig = JSON.parse(JSON.stringify(CRITERIOS_5S));
+
+  let body = `<div class="card" style="max-width:800px;margin:0 auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h3 style="font-size:15px;font-weight:800">Constructor de Formulario 5S</h3>
+      <div>
+        <button class="btn btn-sm" onclick="addSSection()">+ Nueva S</button>
+        <button class="btn btn-accent" style="margin-left:8px" onclick="confirmSaveConfig()">💾 Guardar Configuración</button>
+      </div>
+    </div>
+    <div id="formBuilderContainer" style="display:flex;flex-direction:column;gap:16px">
+  `;
+
+  tempFormConfig.forEach((sec, si) => {
+    body += `<div style="border:1px solid var(--border);border-radius:12px;padding:16px;background:var(--soft)">
+      <div style="display:flex;gap:10px;margin-bottom:12px">
+        <input type="text" value="${sec.s}" placeholder="Ej: 1ª S" style="width:80px;font-weight:800" onchange="tempFormConfig[${si}].s=this.value">
+        <input type="text" value="${sec.nombre}" placeholder="Nombre de la sección" style="flex:1" onchange="tempFormConfig[${si}].nombre=this.value">
+        <button class="btn btn-sm" style="background:#fee2e2;color:#b91c1c;border-color:#fca5a5" onclick="removeSSection(${si})">🗑️ S</button>
+      </div>
+      <div style="padding-left:16px;border-left:2px solid var(--border);display:flex;flex-direction:column;gap:8px">
+    `;
+    sec.items.forEach((item, ii) => {
+      body += `<div style="display:flex;gap:8px">
+        <input type="text" value="${item}" style="flex:1;font-size:13px;padding:6px 10px" onchange="tempFormConfig[${si}].items[${ii}]=this.value">
+        <button class="btn btn-sm" style="padding:0 10px" onclick="removeSItem(${si}, ${ii})">X</button>
+      </div>`;
+    });
+    body += `<button class="btn btn-sm" style="align-self:flex-start;margin-top:8px" onclick="addSItem(${si})">+ Pregunta</button>
+      </div></div>`;
+  });
+
+  body += `</div></div>`;
+  el.innerHTML = body;
+}
+
+function addSSection() { tempFormConfig.push({ s: 'Nueva S', nombre: 'Nueva Sección', items: ['Nueva pregunta'] }); renderConfig(); }
+function removeSSection(si) { tempFormConfig.splice(si, 1); renderConfig(); }
+function addSItem(si) { tempFormConfig[si].items.push('Nueva pregunta'); renderConfig(); }
+function removeSItem(si, ii) { tempFormConfig[si].items.splice(ii, 1); renderConfig(); }
+
+function confirmSaveConfig() {
+  const pwd = prompt('Para guardar los cambios en el formulario, ingresa tu contraseña de administrador:');
+  if (!pwd) return;
+  saveFormConfig(pwd);
+}
+
+async function saveFormConfig(pwd) {
+  const btn = document.querySelector('[onclick="confirmSaveConfig()"]');
+  btnLoad(btn, '⏳ Guardando...');
+  try {
+    const cred = firebase.auth.EmailAuthProvider.credential(currentUser.email, pwd);
+    await currentUser.reauthenticateWithCredential(cred);
+    await db.collection('settings').doc('form').set({ criterios: tempFormConfig });
+    CRITERIOS_5S = JSON.parse(JSON.stringify(tempFormConfig));
+    showToast('Configuración del formulario actualizada con éxito', 'success');
+  } catch(e) {
+    console.error(e);
+    showToast('Error de autenticación: ' + (e.message || 'Contraseña incorrecta'), 'error');
+  } finally {
+    btnReset(btn);
+  }
 }
 
 // ═══════════════════════════════════════
@@ -2373,7 +2460,7 @@ async function submitGuestAudit(){
   }
 
   const criterios={},hallazgos={},hallazgoSLA={};
-  CRITERIOS_5S.forEach((sec,si)=>sec.items.forEach((_,ii)=>{
+  ((typeof a !== 'undefined' && a.formSnapshot) ? a.formSnapshot : (typeof audit !== 'undefined' && audit.formSnapshot ? audit.formSnapshot : CRITERIOS_5S)).forEach((sec,si)=>sec.items.forEach((_,ii)=>{
     const key=`s${si}_i${ii}`;
     criterios[key]=ynState[key]||null;
     hallazgos[key]=document.getElementById(`hallazgo-${si}-${ii}`)?.value||'';
@@ -2425,6 +2512,7 @@ async function submitGuestAudit(){
       deadline,
       createdAt:firebase.firestore.FieldValue.serverTimestamp(),
       guestAudit:true,
+      formSnapshot: CRITERIOS_5S,
       guestAuditorName:name,
       auditCode,
       collaborators:[],
@@ -2565,7 +2653,7 @@ async function submitGuestSolution(auditId,solveName){
   btnLoad(saveBtn,'⏳ Guardando...');
   // Solo mover a 'inprog' si estaba en pending; si ya está en inprog lo deja igual
   const updates={status:audit.status==='pending'?'inprog':audit.status,updatedAt:firebase.firestore.FieldValue.serverTimestamp(),lastSolvedBy:solveName};
-  CRITERIOS_5S.forEach((sec,si)=>sec.items.forEach((_,ii)=>{
+  ((typeof a !== 'undefined' && a.formSnapshot) ? a.formSnapshot : (typeof audit !== 'undefined' && audit.formSnapshot ? audit.formSnapshot : CRITERIOS_5S)).forEach((sec,si)=>sec.items.forEach((_,ii)=>{
     const key=`s${si}_i${ii}`;
     const el=document.getElementById(`rsol-${si}-${ii}`);
     if(el&&(el.value||'').trim()){

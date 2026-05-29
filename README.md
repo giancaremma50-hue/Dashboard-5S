@@ -62,6 +62,7 @@ Digitaliza el ciclo completo de una auditoría 5S:
 | Eliminar auditoría | ❌ | ❌ | ✅ |
 | Dashboard analytics | ❌ | ✅ | ✅ |
 | Gestión de usuarios | ❌ | ❌ | ✅ |
+| Configurar formulario | ❌ | ❌ | ✅ |
 
 ### Modo Rack (acceso anónimo)
 
@@ -125,6 +126,14 @@ Los operadores de rack pueden acceder sin cuenta mediante un **código QR o cód
 - Tabla con nombre, correo y rol actual
 
 ### 6. Notificaciones in-app
+
+### 7. Configuración (Admin)
+- Constructor visual para modificar las categorías y criterios del formulario 5S
+- Requiere re-autenticación con contraseña de administrador para guardar cambios
+- Guarda un *snapshot* del formulario en cada auditoría, garantizando retro-compatibilidad (auditorías antiguas mantienen su estructura original)
+- Esquema central guardado en Firestore (`settings/form`)
+
+### 6. Notificaciones in-app
 - Campanita con badge de no leídas en tiempo real (Firestore `onSnapshot`)
 - Eventos que generan notificaciones:
 
@@ -176,6 +185,8 @@ audits/{auditId}
   evidencias_auditor:     { s0_i0: [url, ...], ... }
   evidencias_supervisor:  { s0_i0: [url, ...], ... }
   guestAudit: boolean     // true si es modo rack
+  auditCode: string       // código único generado
+  formSnapshot: array     // copia del formulario al momento de creación
   closedAt, approvedBy, createdAt, updatedAt
 
 notifications/{notifId}

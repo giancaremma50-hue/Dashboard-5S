@@ -162,6 +162,7 @@ El sistema maneja tres roles con acceso diferenciado:
 | Eliminar auditoría | ❌ | ❌ | ✅ |
 | Dashboard | ❌ | ✅ | ✅ |
 | Gestión de usuarios | ❌ | ❌ | ✅ |
+| Configurar formulario | ❌ | ❌ | ✅ |
 
 ---
 
@@ -175,6 +176,7 @@ El sistema cuenta con cuatro módulos principales accesibles desde la barra late
 | Nueva Auditoría | Operador, Admin | Formulario de registro |
 | Dashboard 5S | Supervisor, Admin | Análisis y semaforización |
 | Gestión de Usuarios | Admin | CRUD de usuarios |
+| Configuración | Admin | Constructor dinámico de formulario 5S |
 
 ---
 
@@ -208,9 +210,11 @@ Cada uno de los 20 criterios (5 secciones × 4 ítems) tiene los siguientes camp
 
 Al hacer clic en **Enviar Auditoría** el sistema:
 1. Valida que exista fecha límite y supervisor seleccionado
-2. Guarda el documento en Firestore con estado `pending`
-3. Sube las fotos de evidencia a Firebase Storage bajo `audits/{id}/auditor/`
-4. Genera una notificación automática para el supervisor asignado
+2. Genera un `auditCode` único y adjunta una copia exacta del formulario actual (`formSnapshot`)
+3. Guarda el documento en Firestore con estado `pending`
+4. Sube las fotos de evidencia a Firebase Storage bajo `audits/{id}/auditor/`
+5. Muestra un modal con el código único generado
+6. Genera una notificación automática para el supervisor asignado
 
 ---
 
